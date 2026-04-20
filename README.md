@@ -13,6 +13,7 @@ It fetches data from the Stormglass API, filters for requested parameters, and r
 - **Reverse Geocoding**: Integrated with BigDataCloud and supports **custom location overrides** via CSV.
 - **Redis Caching**: Caches responses locally to stay within API rate limits and speed up subsequent requests.
 - **Strict Validation**: Enforces input parameters and filters requested weather parameters.
+- **Access Control**: Secures proxy access with allowed App IDs.
 
 ## Prerequisites
 
@@ -130,6 +131,7 @@ curl "http://localhost:8080/data/reverse-geocode-client?latitude=21.27&longitude
 - `STORMGLASS_API_KEY`: Your Stormglass.io API key.
 - `REDIS_ADDR`: Address of the Redis instance (default: `redis:6379`).
 - `PORT`: Port to listen on (default: `8080`).
+- `ALLOWED_APP_IDS`: Restrict proxy access to a comma-separated list of App IDs. Clients must pass this as `X-App-Id` headers or `app_id` query parameters. Leave blank to allow any request.
 
 ## Development
 

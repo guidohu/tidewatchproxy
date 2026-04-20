@@ -21,22 +21,23 @@ import (
 )
 
 var allowedWeatherParams = map[string]bool{
-	"swellHeight":            true,
-	"swellPeriod":            true,
-	"swellDirection":         true,
-	"secondarySwellHeight":   true,
-	"secondarySwellPeriod":   true,
+	"swellHeight":             true,
+	"swellPeriod":             true,
+	"swellDirection":          true,
+	"secondarySwellHeight":    true,
+	"secondarySwellPeriod":    true,
 	"secondarySwellDirection": true,
 }
 
 var (
-	redisClient       *redis.Client
-	stormglassAPIKey  string
-	ctx               = context.Background()
-	customLocations   = make(map[string]string)
-	locationCache     = make(map[string]LocationResponse)
-	locationCacheMu   sync.RWMutex
-	useCache          bool
+	redisClient      *redis.Client
+	stormglassAPIKey string
+	ctx              = context.Background()
+	customLocations  = make(map[string]string)
+	locationCache    = make(map[string]LocationResponse)
+	locationCacheMu  sync.RWMutex
+	useCache         bool
+	allowedAppIDs    []string
 )
 
 const (
@@ -82,6 +83,7 @@ func main() {
 		redisAddrFlag       = flag.String("redis-addr", getEnv("REDIS_ADDR", RedisAddr), "Redis address")
 		portFlag            = flag.String("port", getEnv("PORT", "8080"), "Port to listen on")
 		customLocationsFlag = flag.String("custom-locations", "custom_locations.csv", "Path to custom locations CSV file")
+		allowedAppIDsFlag   = flag.String("allowed-app-ids", getEnv("ALLOWED_APP_IDS", ""), "Comma separated list of allowed App IDs or API keys")
 	)
 	flag.BoolVar(&useCache, "use-cache", true, "Enable Redis caching")
 
@@ -93,6 +95,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  STORMGLASS_API_KEY  Fallback Stormglass API key\n")
 		fmt.Fprintf(os.Stderr, "  REDIS_ADDR          Redis address\n")
 		fmt.Fprintf(os.Stderr, "  PORT                Port to listen on\n")
+		fmt.Fprintf(os.Stderr, "  ALLOWED_APP_IDS     Comma separated list of allowed App IDs or API keys\n")
 	}
 	flag.Parse()
 
@@ -100,6 +103,12 @@ func main() {
 	stormglassAPIKey = *apiKeyFlag
 	redisAddr := *redisAddrFlag
 	port := *portFlag
+	if *allowedAppIDsFlag != "" {
+		allowedAppIDs = strings.Split(*allowedAppIDsFlag, ",")
+		for i := range allowedAppIDs {
+			allowedAppIDs[i] = strings.TrimSpace(allowedAppIDs[i])
+		}
+	}
 
 	loadCustomLocations(*customLocationsFlag)
 
@@ -122,7 +131,7 @@ func main() {
 	r.GET("/v2/weather/point", authMiddleware(), handleWeather)
 	r.GET("/v2/tide/extremes/point", authMiddleware(), handleTides)
 	r.GET("/v2/tide/sea-level/point", authMiddleware(), handleSeaLevel)
-	r.GET("/data/reverse-geocode-client", handleReverseGeocode)
+	r.GET("/data/reverse-geocode-client", authMiddleware(), handleReverseGeocode)
 
 	r.Run(":" + port)
 }
@@ -170,6 +179,25 @@ func loadCustomLocations(path string) {
 
 func authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if len(allowedAppIDs) > 0 {
+			appID := c.Request.Header.Get("X-App-Id")
+			if appID == "" {
+				appID = c.Query("app_id")
+			}
+
+			allowed := false
+			for _, id := range allowedAppIDs {
+				if id == appID {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or missing App ID / API Key"})
+				return
+			}
+		}
+
 		key := c.Request.Header.Get("Authorization")
 		if key == "" {
 			key = c.Query("key")
@@ -223,7 +251,7 @@ func handleWeather(c *gin.Context) {
 			filteredParams = append(filteredParams, strings.TrimSpace(p))
 		}
 	}
-	
+
 	if len(filteredParams) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid parameters requested"})
 		return
@@ -231,8 +259,8 @@ func handleWeather(c *gin.Context) {
 	params = strings.Join(filteredParams, ",")
 
 	startTime, endTime := parseAndClampTime(start, end)
-	
-	cacheKey := fmt.Sprintf("weather:%.2f:%.2f:%s:%s:%d:%d", 
+
+	cacheKey := fmt.Sprintf("weather:%.2f:%.2f:%s:%s:%d:%d",
 		latVal, lngVal, params, source, startTime.Unix(), endTime.Unix())
 
 	if useCache {
@@ -245,9 +273,9 @@ func handleWeather(c *gin.Context) {
 
 	// Fetch from Stormglass
 	apiKey := c.GetString("api_key")
-	url := fmt.Sprintf("%s/v2/weather/point?lat=%.4f&lng=%.4f&params=%s&source=%s&start=%d&end=%d", 
+	url := fmt.Sprintf("%s/v2/weather/point?lat=%.4f&lng=%.4f&params=%s&source=%s&start=%d&end=%d",
 		StormglassBaseURL, latVal, lngVal, params, source, startTime.Unix(), endTime.Unix())
-	
+
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", apiKey)
 
@@ -266,7 +294,7 @@ func handleWeather(c *gin.Context) {
 
 	var raw struct {
 		Hours []struct {
-			Time   string `json:"time"`
+			Time        string `json:"time"`
 			SwellHeight struct {
 				NOAA float64 `json:"noaa"`
 			} `json:"swellHeight"`
@@ -354,8 +382,8 @@ func handleTides(c *gin.Context) {
 	}
 
 	startTime, endTime := parseAndClampTime(start, end)
-	
-	cacheKey := fmt.Sprintf("tides:%.2f:%.2f:%d:%d", 
+
+	cacheKey := fmt.Sprintf("tides:%.2f:%.2f:%d:%d",
 		latVal, lngVal, startTime.Unix(), endTime.Unix())
 
 	if useCache {
@@ -367,9 +395,9 @@ func handleTides(c *gin.Context) {
 	}
 
 	apiKey := c.GetString("api_key")
-	url := fmt.Sprintf("%s/v2/tide/extremes/point?lat=%s&lng=%s&start=%d&end=%d", 
+	url := fmt.Sprintf("%s/v2/tide/extremes/point?lat=%s&lng=%s&start=%d&end=%d",
 		StormglassBaseURL, lat, lng, startTime.Unix(), endTime.Unix())
-	
+
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", apiKey)
 
@@ -437,8 +465,8 @@ func handleSeaLevel(c *gin.Context) {
 	}
 
 	startTime, endTime := parseAndClampTime(start, end)
-	
-	cacheKey := fmt.Sprintf("sealevel:%.2f:%.2f:%d:%d:%s", 
+
+	cacheKey := fmt.Sprintf("sealevel:%.2f:%.2f:%d:%d:%s",
 		latVal, lngVal, startTime.Unix(), endTime.Unix(), datum)
 
 	if useCache {
@@ -450,12 +478,12 @@ func handleSeaLevel(c *gin.Context) {
 	}
 
 	apiKey := c.GetString("api_key")
-	url := fmt.Sprintf("%s/v2/tide/sea-level/point?lat=%.4f&lng=%.4f&start=%d&end=%d", 
+	url := fmt.Sprintf("%s/v2/tide/sea-level/point?lat=%.4f&lng=%.4f&start=%d&end=%d",
 		StormglassBaseURL, latVal, lngVal, startTime.Unix(), endTime.Unix())
 	if datum != "" {
 		url += "&datum=" + datum
 	}
-	
+
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", apiKey)
 
@@ -534,9 +562,9 @@ func handleReverseGeocode(c *gin.Context) {
 	}
 
 	// Fetch from BigDataCloud
-	url := fmt.Sprintf("%s/data/reverse-geocode-client?latitude=%s&longitude=%s&localityLanguage=en", 
+	url := fmt.Sprintf("%s/data/reverse-geocode-client?latitude=%s&longitude=%s&localityLanguage=en",
 		BigDataCloudBaseURL, latStr, lngStr)
-	
+
 	resp, err := http.Get(url)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from BigDataCloud"})
@@ -626,4 +654,3 @@ func isValidCoordinate(val float64) bool {
 func toPtr(f float64) *float64 {
 	return &f
 }
-
