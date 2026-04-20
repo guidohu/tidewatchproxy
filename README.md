@@ -39,15 +39,91 @@ The application will run on `http://localhost:8080`.
 - **Params**: `swellHeight`, `swellPeriod`, `swellDirection`, `secondarySwellHeight`, `secondarySwellPeriod`, `secondarySwellDirection`.
 - **Default Source**: `noaa`.
 
+**Example Request**:
+```bash
+curl "http://localhost:8080/v2/weather/point?lat=21.27&lng=-157.82&params=swellHeight,swellPeriod,swellDirection&source=noaa"
+```
+
+**Example Response**:
+```json
+{
+  "data": [
+    {
+      "ts": 1776640237,
+      "h1": 1.45,
+      "d1": 185.2,
+      "p1": 14.1
+    }
+  ]
+}
+```
+
 ### Tide Extremes
 `GET /v2/tide/extremes/point?lat=...&lng=...&start=...&end=...`
+
+**Example Request**:
+```bash
+curl "http://localhost:8080/v2/tide/extremes/point?lat=21.27&lng=-157.82&start=1776640237&end=1776726637"
+```
+
+**Example Response**:
+```json
+{
+  "data": [
+    {
+      "ts": 1776640237,
+      "h": 0.45
+    },
+    {
+      "ts": 1776661837,
+      "h": 1.2
+    }
+  ]
+}
+```
 
 ### Sea Level
 `GET /v2/tide/sea-level/point?lat=...&lng=...&start=...&end=...&datum=MLLW`
 
+**Example Request**:
+```bash
+curl "http://localhost:8080/v2/tide/sea-level/point?lat=21.27&lng=-157.82&start=1776640237&end=1776643837&datum=MLLW"
+```
+
+**Example Response**:
+```json
+{
+  "data": [
+    {
+      "ts": 1776640237,
+      "h": 0.45
+    },
+    {
+      "ts": 1776643837,
+      "h": 0.52
+    }
+  ]
+}
+```
+
 ### Reverse Geocode
 `GET /data/reverse-geocode-client?latitude=...&longitude=...`
 - Returns local name/city. Checks `custom_locations.csv` first.
+
+**Example Request**:
+```bash
+curl "http://localhost:8080/data/reverse-geocode-client?latitude=21.27&longitude=-157.82"
+```
+
+**Example Response**:
+```json
+{
+  "locality": "Waikiki",
+  "city": "Honolulu",
+  "countryName": "United States",
+  "countryCode": "US"
+}
+```
 
 ## Environment Variables
 
