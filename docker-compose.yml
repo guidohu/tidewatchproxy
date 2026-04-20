@@ -7,6 +7,7 @@ services:
       - REDIS_ADDR=redis:6379
       - PORT=8080
       - STORMGLASS_API_KEY=mysupersecretkey
+      - ALLOWED_APP_IDS=myappid,myotherappid
     depends_on:
       - redis
     volumes:
