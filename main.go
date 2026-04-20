@@ -2,14 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
-	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,183 +20,91 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+var allowedWeatherParams = map[string]bool{
+	"swellHeight":            true,
+	"swellPeriod":            true,
+	"swellDirection":         true,
+	"secondarySwellHeight":   true,
+	"secondarySwellPeriod":   true,
+	"secondarySwellDirection": true,
+}
+
 var (
-	redisClient *redis.Client
-	useCache    bool
-	proxyAPIKey string
-	ctx         = context.Background()
+	redisClient       *redis.Client
+	stormglassAPIKey  string
+	ctx               = context.Background()
+	customLocations   = make(map[string]string)
+	locationCache     = make(map[string]LocationResponse)
+	locationCacheMu   sync.RWMutex
+	useCache          bool
 )
 
 const (
-	SurflineBaseURL = "https://services.surfline.com"
-	RedisAddr       = "redis:6379"
+	StormglassBaseURL   = "https://api.stormglass.io"
+	BigDataCloudBaseURL = "https://api.bigdatacloud.net"
+	RedisAddr           = "redis:6379"
 )
 
-// Data models for filtered response
-type Spot struct {
-	ID   string  `json:"_id"`
-	Name string  `json:"name"`
-	Lat  float64 `json:"lat"`
-	Lon  float64 `json:"lon"`
+type LocationResponse struct {
+	Locality    string `json:"locality,omitempty"`
+	City        string `json:"city,omitempty"`
+	CountryName string `json:"countryName,omitempty"`
+	CountryCode string `json:"countryCode,omitempty"`
 }
 
-type MapviewResponse struct {
-	Data struct {
-		Spots []Spot `json:"spots"`
-	} `json:"data"`
+type DenseWeatherData struct {
+	Data []DenseWeatherPoint `json:"data"`
 }
 
-type TidePoint struct {
-	Timestamp int64   `json:"timestamp"`
-	Type      string  `json:"type"`
-	Height    float64 `json:"height"`
+type DenseWeatherPoint struct {
+	Timestamp int64    `json:"ts"`
+	H1        *float64 `json:"h1,omitempty"`
+	D1        *float64 `json:"d1,omitempty"`
+	P1        *float64 `json:"p1,omitempty"`
+	H2        *float64 `json:"h2,omitempty"`
+	D2        *float64 `json:"d2,omitempty"`
+	P2        *float64 `json:"p2,omitempty"`
 }
 
-type TideForecastResponse struct {
-	Associated struct {
-		Units struct {
-			TideHeight string `json:"tideHeight"`
-		} `json:"units"`
-	} `json:"associated"`
-	Data struct {
-		Tides []TidePoint `json:"tides"`
-	} `json:"data"`
+type DenseTideData struct {
+	Data []DenseTidePoint `json:"data"`
 }
 
-type Swell struct {
-	Height    float64 `json:"height"`
-	Period    float64 `json:"period"`
-	Direction float64 `json:"direction"`
-	Impact    float64 `json:"impact"`
-}
-
-type WavePoint struct {
-	Timestamp int64   `json:"timestamp"`
-	Swells    []Swell `json:"swells"`
-}
-
-type WaveForecastResponse struct {
-	Associated struct {
-		Units struct {
-			SwellHeight string `json:"swellHeight"`
-		} `json:"units"`
-		Location struct {
-			Lat float64 `json:"lat"`
-			Lon float64 `json:"lon"`
-		} `json:"location"`
-	} `json:"associated"`
-	Data struct {
-		Wave []WavePoint `json:"wave"`
-	} `json:"data"`
-}
-
-type rateLimiter struct {
-	tokens int
-	last   time.Time
-}
-
-var (
-	mu      sync.Mutex
-	clients = make(map[string]*rateLimiter)
-)
-
-func rateLimitMiddleware() gin.HandlerFunc {
-	// Cleanup stale IP entries
-	go func() {
-		for {
-			time.Sleep(5 * time.Minute)
-			mu.Lock()
-			for ip, limiter := range clients {
-				if time.Since(limiter.last) > 10*time.Minute {
-					delete(clients, ip)
-				}
-			}
-			mu.Unlock()
-		}
-	}()
-
-	return func(c *gin.Context) {
-		ip := c.Request.Header.Get("X-Forwarded-For")
-		if ip == "" {
-			ip = c.ClientIP()
-		} else {
-			parts := strings.Split(ip, ",")
-			ip = strings.TrimSpace(parts[0])
-		}
-
-		mu.Lock()
-		now := time.Now()
-		limiter, exists := clients[ip]
-		if !exists {
-			limiter = &rateLimiter{tokens: 10, last: now}
-			clients[ip] = limiter
-		} else {
-			// Refill tokens: 10 per minute = 1 token per 6 seconds
-			elapsed := now.Sub(limiter.last)
-			tokensToAdd := int(elapsed.Seconds() / 6.0)
-			if tokensToAdd > 0 {
-				limiter.tokens += tokensToAdd
-				if limiter.tokens > 10 {
-					limiter.tokens = 10
-				}
-				limiter.last = limiter.last.Add(time.Duration(tokensToAdd*6) * time.Second)
-			}
-		}
-
-		allowed := false
-		if limiter.tokens > 0 {
-			limiter.tokens--
-			allowed = true
-		}
-		mu.Unlock()
-
-		if !allowed {
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Rate limit exceeded. Maximum 10 requests per minute per IP."})
-			return
-		}
-		c.Next()
-	}
-}
-
-func authMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		key := c.Request.Header.Get("x-api-key")
-		if key == "" {
-			authHeader := c.Request.Header.Get("Authorization")
-			if strings.HasPrefix(authHeader, "Bearer ") {
-				key = strings.TrimPrefix(authHeader, "Bearer ")
-			}
-		}
-
-		if proxyAPIKey == "" {
-			c.Next()
-			return
-		}
-
-		if key != proxyAPIKey {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: Invalid API Key"})
-			return
-		}
-
-		c.Next()
-	}
+type DenseTidePoint struct {
+	Timestamp int64   `json:"ts"`
+	Height    float64 `json:"h"`
 }
 
 func main() {
+	// Flags with environment variables as defaults
+	var (
+		apiKeyFlag          = flag.String("stormglass-api-key", os.Getenv("STORMGLASS_API_KEY"), "Stormglass API key")
+		redisAddrFlag       = flag.String("redis-addr", getEnv("REDIS_ADDR", RedisAddr), "Redis address")
+		portFlag            = flag.String("port", getEnv("PORT", "8080"), "Port to listen on")
+		customLocationsFlag = flag.String("custom-locations", "custom_locations.csv", "Path to custom locations CSV file")
+	)
 	flag.BoolVar(&useCache, "use-cache", true, "Enable Redis caching")
-	flag.StringVar(&proxyAPIKey, "api-key", os.Getenv("API_KEY"), "API Key for client authentication")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\nFlags:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nEnvironment Variables (used as defaults for flags):\n")
+		fmt.Fprintf(os.Stderr, "  STORMGLASS_API_KEY  Fallback Stormglass API key\n")
+		fmt.Fprintf(os.Stderr, "  REDIS_ADDR          Redis address\n")
+		fmt.Fprintf(os.Stderr, "  PORT                Port to listen on\n")
+	}
 	flag.Parse()
 
-	if proxyAPIKey == "" {
-		log.Println("WARNING: Proxy API key is not set. API key authentication is disabled and all requests will be allowed.")
-	}
+	// Assign flag values
+	stormglassAPIKey = *apiKeyFlag
+	redisAddr := *redisAddrFlag
+	port := *portFlag
+
+	loadCustomLocations(*customLocationsFlag)
 
 	// Initialize Redis
 	if useCache {
-		redisAddr := os.Getenv("REDIS_ADDR")
-		if redisAddr == "" {
-			redisAddr = RedisAddr
-		}
 		redisClient = redis.NewClient(&redis.Options{
 			Addr: redisAddr,
 		})
@@ -208,185 +118,512 @@ func main() {
 	}
 
 	r := gin.Default()
-	
-	// Apply middlewares
-	r.Use(rateLimitMiddleware())
-	r.Use(authMiddleware())
 
-	r.GET("/kbyg/mapview", handleMapview)
-	r.GET("/kbyg/spots/forecasts/tides", handleTides)
-	r.GET("/kbyg/spots/forecasts/wave", handleWave)
+	r.GET("/v2/weather/point", authMiddleware(), handleWeather)
+	r.GET("/v2/tide/extremes/point", authMiddleware(), handleTides)
+	r.GET("/v2/tide/sea-level/point", authMiddleware(), handleSeaLevel)
+	r.GET("/data/reverse-geocode-client", handleReverseGeocode)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
 	r.Run(":" + port)
 }
 
-func handleMapview(c *gin.Context) {
-	cacheKey := fmt.Sprintf("mapview:%s", c.Request.URL.RawQuery)
-	ttl := 24 * time.Hour
-
-	proxyRequest(c, "/kbyg/mapview", cacheKey, ttl, func(data []byte) (interface{}, error) {
-		var raw struct {
-			Data struct {
-				Spots []struct {
-					ID   string  `json:"_id"`
-					Name string  `json:"name"`
-					Lat  float64 `json:"lat"`
-					Lon  float64 `json:"lon"`
-					// Ignore other fields
-				} `json:"spots"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, err
-		}
-
-		var filtered MapviewResponse
-		for _, s := range raw.Data.Spots {
-			filtered.Data.Spots = append(filtered.Data.Spots, Spot{
-				ID:   s.ID,
-				Name: s.Name,
-				Lat:  s.Lat,
-				Lon:  s.Lon,
-			})
-		}
-		return filtered, nil
-	})
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
 }
 
-func handleTides(c *gin.Context) {
-	cacheKey := fmt.Sprintf("tides:%s", c.Request.URL.RawQuery)
-	ttl := 24 * time.Hour
+func loadCustomLocations(path string) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		log.Printf("No custom locations file found at %s. Skipping.", path)
+		return
+	}
 
-	proxyRequest(c, "/kbyg/spots/forecasts/tides", cacheKey, ttl, func(data []byte) (interface{}, error) {
-		var raw struct {
-			Associated struct {
-				Units struct {
-					TideHeight string `json:"tideHeight"`
-				} `json:"units"`
-			} `json:"associated"`
-			Data struct {
-				Tides []TidePoint `json:"tides"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, err
-		}
+	f, err := os.Open(path)
+	if err != nil {
+		log.Printf("Warning: Could not open custom locations file at %s: %v", path, err)
+		return
+	}
+	defer f.Close()
 
-		var filtered TideForecastResponse
-		filtered.Associated.Units.TideHeight = raw.Associated.Units.TideHeight
-		filtered.Data.Tides = raw.Data.Tides
-		return filtered, nil
-	})
+	reader := csv.NewReader(f)
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Printf("Error: Failed to read custom locations CSV at %s: %v", path, err)
+		return
+	}
+
+	for _, record := range records {
+		if len(record) < 3 {
+			continue
+		}
+		lat, _ := strconv.ParseFloat(strings.TrimSpace(record[0]), 64)
+		lon, _ := strconv.ParseFloat(strings.TrimSpace(record[1]), 64)
+		name := strings.TrimSpace(record[2])
+
+		key := fmt.Sprintf("%.2f,%.2f", round(lat, 2), round(lon, 2))
+		customLocations[key] = name
+	}
+	log.Printf("Successfully loaded %d custom locations from %s", len(customLocations), path)
 }
 
-func handleWave(c *gin.Context) {
-	cacheKey := fmt.Sprintf("wave:%s", c.Request.URL.RawQuery)
-	ttl := 1 * time.Hour
-
-	proxyRequest(c, "/kbyg/spots/forecasts/wave", cacheKey, ttl, func(data []byte) (interface{}, error) {
-		var raw struct {
-			Associated struct {
-				Units struct {
-					SwellHeight string `json:"swellHeight"`
-				} `json:"units"`
-				Location struct {
-					Lat float64 `json:"lat"`
-					Lon float64 `json:"lon"`
-				} `json:"location"`
-			} `json:"associated"`
-			Data struct {
-				Wave []struct {
-					Timestamp int64 `json:"timestamp"`
-					Swells    []struct {
-						Height    float64 `json:"height"`
-						Period    float64 `json:"period"`
-						Direction float64 `json:"direction"`
-						Impact    float64 `json:"impact"`
-					} `json:"swells"`
-				} `json:"wave"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, err
+func authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := c.Request.Header.Get("Authorization")
+		if key == "" {
+			key = c.Query("key")
 		}
 
-		var filtered WaveForecastResponse
-		filtered.Associated.Units.SwellHeight = raw.Associated.Units.SwellHeight
-		filtered.Associated.Location.Lat = raw.Associated.Location.Lat
-		filtered.Associated.Location.Lon = raw.Associated.Location.Lon
-
-		for _, w := range raw.Data.Wave {
-			point := WavePoint{Timestamp: w.Timestamp}
-
-			// Sort swells by impact descending
-			sort.Slice(w.Swells, func(i, j int) bool {
-				return w.Swells[i].Impact > w.Swells[j].Impact
-			})
-
-			for i, s := range w.Swells {
-				if i >= 3 {
-					break // Only top 3 swells needed
-				}
-				point.Swells = append(point.Swells, Swell{
-					Height:    s.Height,
-					Period:    s.Period,
-					Direction: s.Direction,
-					Impact:    s.Impact,
-				})
-			}
-			filtered.Data.Wave = append(filtered.Data.Wave, point)
+		if key == "" {
+			key = stormglassAPIKey
 		}
-		return filtered, nil
-	})
+
+		if key == "" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No API key provided"})
+			return
+		}
+
+		c.Set("api_key", key)
+		c.Next()
+	}
 }
 
-func proxyRequest(c *gin.Context, path, cacheKey string, ttl time.Duration, filter func([]byte) (interface{}, error)) {
+func handleWeather(c *gin.Context) {
+	lat := c.Query("lat")
+	lng := c.Query("lng")
+	params := c.Query("params")
+	start := c.Query("start")
+	end := c.Query("end")
+
+	latVal, latErr := strconv.ParseFloat(lat, 64)
+	lngVal, lngErr := strconv.ParseFloat(lng, 64)
+
+	if lat == "" || lng == "" || latErr != nil || lngErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "lat and lng must be valid numbers"})
+		return
+	}
+
+	if !isValidCoordinate(latVal) || !isValidCoordinate(lngVal) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
+		return
+	}
+
+	source := c.DefaultQuery("source", "noaa")
+	if source != "noaa" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only 'noaa' source is supported so far"})
+		return
+	}
+
+	// Filter params
+	requestedParams := strings.Split(params, ",")
+	var filteredParams []string
+	for _, p := range requestedParams {
+		if allowedWeatherParams[strings.TrimSpace(p)] {
+			filteredParams = append(filteredParams, strings.TrimSpace(p))
+		}
+	}
+	
+	if len(filteredParams) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid parameters requested"})
+		return
+	}
+	params = strings.Join(filteredParams, ",")
+
+	startTime, endTime := parseAndClampTime(start, end)
+	
+	cacheKey := fmt.Sprintf("weather:%.2f:%.2f:%s:%s:%d:%d", 
+		latVal, lngVal, params, source, startTime.Unix(), endTime.Unix())
+
 	if useCache {
-		val, err := redisClient.Get(ctx, cacheKey).Result()
-		if err == nil {
+		if val, err := redisClient.Get(ctx, cacheKey).Result(); err == nil {
 			c.Header("X-Cache", "HIT")
 			c.Data(http.StatusOK, "application/json", []byte(val))
 			return
 		}
 	}
 
-	// Fetch from Surfline
-	resp, err := http.Get(SurflineBaseURL + path + "?" + c.Request.URL.RawQuery)
+	// Fetch from Stormglass
+	apiKey := c.GetString("api_key")
+	url := fmt.Sprintf("%s/v2/weather/point?lat=%.4f&lng=%.4f&params=%s&source=%s&start=%d&end=%d", 
+		StormglassBaseURL, latVal, lngVal, params, source, startTime.Unix(), endTime.Unix())
+	
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Surfline"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
 		return
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body"})
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
 
-	filteredData, err := filter(body)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to filter data"})
+	var raw struct {
+		Hours []struct {
+			Time   string `json:"time"`
+			SwellHeight struct {
+				NOAA float64 `json:"noaa"`
+			} `json:"swellHeight"`
+			SwellDirection struct {
+				NOAA float64 `json:"noaa"`
+			} `json:"swellDirection"`
+			SwellPeriod struct {
+				NOAA float64 `json:"noaa"`
+			} `json:"swellPeriod"`
+			SecondarySwellHeight struct {
+				NOAA float64 `json:"noaa"`
+			} `json:"secondarySwellHeight"`
+			SecondarySwellDirection struct {
+				NOAA float64 `json:"noaa"`
+			} `json:"secondarySwellDirection"`
+			SecondarySwellPeriod struct {
+				NOAA float64 `json:"noaa"`
+			} `json:"secondarySwellPeriod"`
+		} `json:"hours"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
 		return
 	}
 
-	jsonBytes, err := json.Marshal(filteredData)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal filtered data"})
-		return
+	requested := make(map[string]bool)
+	for _, p := range filteredParams {
+		requested[p] = true
 	}
 
-	if useCache {
-		err := redisClient.Set(ctx, cacheKey, jsonBytes, ttl).Err()
-		if err != nil {
-			log.Printf("Warning: Could not set cache for key %s: %v", cacheKey, err)
+	dense := DenseWeatherData{Data: make([]DenseWeatherPoint, 0)}
+	for _, h := range raw.Hours {
+		t, _ := time.Parse(time.RFC3339, h.Time)
+		point := DenseWeatherPoint{Timestamp: t.Unix()}
+
+		if requested["swellHeight"] {
+			point.H1 = toPtr(h.SwellHeight.NOAA)
 		}
+		if requested["swellDirection"] {
+			point.D1 = toPtr(h.SwellDirection.NOAA)
+		}
+		if requested["swellPeriod"] {
+			point.P1 = toPtr(h.SwellPeriod.NOAA)
+		}
+		if requested["secondarySwellHeight"] {
+			point.H2 = toPtr(h.SecondarySwellHeight.NOAA)
+		}
+		if requested["secondarySwellDirection"] {
+			point.D2 = toPtr(h.SecondarySwellDirection.NOAA)
+		}
+		if requested["secondarySwellPeriod"] {
+			point.P2 = toPtr(h.SecondarySwellPeriod.NOAA)
+		}
+
+		dense.Data = append(dense.Data, point)
+	}
+
+	jsonData, _ := json.Marshal(dense)
+	if useCache {
+		redisClient.Set(ctx, cacheKey, jsonData, time.Hour)
 	}
 
 	c.Header("X-Cache", "MISS")
-	c.Data(http.StatusOK, "application/json", jsonBytes)
+	c.JSON(http.StatusOK, dense)
 }
+
+func handleTides(c *gin.Context) {
+	lat := c.Query("lat")
+	lng := c.Query("lng")
+	start := c.Query("start")
+	end := c.Query("end")
+
+	latVal, latErr := strconv.ParseFloat(lat, 64)
+	lngVal, lngErr := strconv.ParseFloat(lng, 64)
+
+	if lat == "" || lng == "" || latErr != nil || lngErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "lat and lng must be valid numbers"})
+		return
+	}
+
+	if !isValidCoordinate(latVal) || !isValidCoordinate(lngVal) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
+		return
+	}
+
+	startTime, endTime := parseAndClampTime(start, end)
+	
+	cacheKey := fmt.Sprintf("tides:%.2f:%.2f:%d:%d", 
+		latVal, lngVal, startTime.Unix(), endTime.Unix())
+
+	if useCache {
+		if val, err := redisClient.Get(ctx, cacheKey).Result(); err == nil {
+			c.Header("X-Cache", "HIT")
+			c.Data(http.StatusOK, "application/json", []byte(val))
+			return
+		}
+	}
+
+	apiKey := c.GetString("api_key")
+	url := fmt.Sprintf("%s/v2/tide/extremes/point?lat=%s&lng=%s&start=%d&end=%d", 
+		StormglassBaseURL, lat, lng, startTime.Unix(), endTime.Unix())
+	
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.Data(resp.StatusCode, "application/json", body)
+		return
+	}
+
+	var raw struct {
+		Data []struct {
+			Height float64 `json:"height"`
+			Time   string  `json:"time"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
+		return
+	}
+
+	dense := DenseTideData{Data: make([]DenseTidePoint, 0)}
+	for _, d := range raw.Data {
+		t, _ := time.Parse(time.RFC3339, d.Time)
+		dense.Data = append(dense.Data, DenseTidePoint{
+			Timestamp: t.Unix(),
+			Height:    d.Height,
+		})
+	}
+
+	jsonData, _ := json.Marshal(dense)
+	if useCache {
+		redisClient.Set(ctx, cacheKey, jsonData, time.Hour)
+	}
+
+	c.Header("X-Cache", "MISS")
+	c.JSON(http.StatusOK, dense)
+}
+
+func handleSeaLevel(c *gin.Context) {
+	lat := c.Query("lat")
+	lng := c.Query("lng")
+	start := c.Query("start")
+	end := c.Query("end")
+	datum := c.Query("datum")
+
+	latVal, latErr := strconv.ParseFloat(lat, 64)
+	lngVal, lngErr := strconv.ParseFloat(lng, 64)
+
+	if lat == "" || lng == "" || latErr != nil || lngErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "lat and lng must be valid numbers"})
+		return
+	}
+
+	if !isValidCoordinate(latVal) || !isValidCoordinate(lngVal) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
+		return
+	}
+
+	startTime, endTime := parseAndClampTime(start, end)
+	
+	cacheKey := fmt.Sprintf("sealevel:%.2f:%.2f:%d:%d:%s", 
+		latVal, lngVal, startTime.Unix(), endTime.Unix(), datum)
+
+	if useCache {
+		if val, err := redisClient.Get(ctx, cacheKey).Result(); err == nil {
+			c.Header("X-Cache", "HIT")
+			c.Data(http.StatusOK, "application/json", []byte(val))
+			return
+		}
+	}
+
+	apiKey := c.GetString("api_key")
+	url := fmt.Sprintf("%s/v2/tide/sea-level/point?lat=%.4f&lng=%.4f&start=%d&end=%d", 
+		StormglassBaseURL, latVal, lngVal, startTime.Unix(), endTime.Unix())
+	if datum != "" {
+		url += "&datum=" + datum
+	}
+	
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.Data(resp.StatusCode, "application/json", body)
+		return
+	}
+
+	var raw struct {
+		Data []struct {
+			Sg   float64 `json:"sg"`
+			Time string  `json:"time"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
+		return
+	}
+
+	dense := DenseTideData{Data: make([]DenseTidePoint, 0)}
+	for _, d := range raw.Data {
+		t, _ := time.Parse(time.RFC3339, d.Time)
+		dense.Data = append(dense.Data, DenseTidePoint{
+			Timestamp: t.Unix(),
+			Height:    d.Sg,
+		})
+	}
+
+	jsonData, _ := json.Marshal(dense)
+	if useCache {
+		redisClient.Set(ctx, cacheKey, jsonData, time.Hour)
+	}
+
+	c.Header("X-Cache", "MISS")
+	c.JSON(http.StatusOK, dense)
+}
+
+func handleReverseGeocode(c *gin.Context) {
+	latStr := c.Query("latitude")
+	lngStr := c.Query("longitude")
+
+	if latStr == "" || lngStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude are required"})
+		return
+	}
+
+	lat := mustParseFloat(latStr)
+	lng := mustParseFloat(lngStr)
+	key := fmt.Sprintf("%.2f,%.2f", round(lat, 2), round(lng, 2))
+
+	// Check CSV first - this always works, regardless of useCache flag
+	if name, ok := customLocations[key]; ok {
+		log.Printf("CSV Match: Found custom location '%s' for key %s", name, key)
+		c.JSON(http.StatusOK, LocationResponse{Locality: name})
+		return
+	}
+
+	// Check memory cache if enabled
+	if useCache {
+		locationCacheMu.RLock()
+		if cached, ok := locationCache[key]; ok {
+			locationCacheMu.RUnlock()
+			c.JSON(http.StatusOK, cached)
+			return
+		}
+		locationCacheMu.RUnlock()
+	}
+
+	// Fetch from BigDataCloud
+	url := fmt.Sprintf("%s/data/reverse-geocode-client?latitude=%s&longitude=%s&localityLanguage=en", 
+		BigDataCloudBaseURL, latStr, lngStr)
+	
+	resp, err := http.Get(url)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from BigDataCloud"})
+		return
+	}
+	defer resp.Body.Close()
+
+	var raw struct {
+		Locality    string `json:"locality"`
+		City        string `json:"city"`
+		CountryName string `json:"countryName"`
+		CountryCode string `json:"countryCode"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse BigDataCloud response"})
+		return
+	}
+
+	filtered := LocationResponse{
+		Locality:    raw.Locality,
+		City:        raw.City,
+		CountryName: raw.CountryName,
+		CountryCode: raw.CountryCode,
+	}
+
+	// Cache result if enabled
+	if useCache {
+		locationCacheMu.Lock()
+		locationCache[key] = filtered
+		locationCacheMu.Unlock()
+	}
+
+	c.JSON(http.StatusOK, filtered)
+}
+
+func parseAndClampTime(start, end string) (time.Time, time.Time) {
+	var startTime, endTime time.Time
+
+	if start != "" {
+		if s, err := strconv.ParseInt(start, 10, 64); err == nil {
+			startTime = time.Unix(s, 0)
+		} else {
+			startTime, _ = time.Parse(time.RFC3339, start)
+		}
+	} else {
+		startTime = time.Now()
+	}
+
+	if end != "" {
+		if e, err := strconv.ParseInt(end, 10, 64); err == nil {
+			endTime = time.Unix(e, 0)
+		} else {
+			endTime, _ = time.Parse(time.RFC3339, end)
+		}
+	} else {
+		endTime = startTime.Add(24 * time.Hour)
+	}
+
+	// Rounding
+	startTime = startTime.Truncate(time.Hour)
+	endTime = endTime.Add(time.Hour - 1).Truncate(time.Hour)
+
+	// Clamping to 7 days
+	maxEnd := startTime.Add(7 * 24 * time.Hour)
+	if endTime.After(maxEnd) {
+		endTime = maxEnd
+	}
+
+	return startTime, endTime
+}
+
+func mustParseFloat(s string) float64 {
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
+}
+
+func round(val float64, precision int) float64 {
+	ratio := math.Pow(10, float64(precision))
+	return math.Round(val*ratio) / ratio
+}
+
+func isValidCoordinate(val float64) bool {
+	return val >= -180 && val <= 180
+}
+
+func toPtr(f float64) *float64 {
+	return &f
+}
+

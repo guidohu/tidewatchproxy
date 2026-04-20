@@ -6,9 +6,11 @@ services:
     environment:
       - REDIS_ADDR=redis:6379
       - PORT=8080
-      - API_KEY=mysupersecretkey
+      - STORMGLASS_API_KEY=mysupersecretkey
     depends_on:
       - redis
+    volumes:
+      - ./custom_locations.csv:/app/custom_locations.csv
     command: ["--use-cache=true"]
 
   redis:
