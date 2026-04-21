@@ -110,6 +110,13 @@ func main() {
 		}
 	}
 
+	log.Printf("Starting Tide Watch Proxy...")
+	log.Printf("Port: %s", port)
+	log.Printf("Redis Address: %s", redisAddr)
+	log.Printf("Stormglass API Key: %s", stormglassAPIKey)
+	log.Printf("Allowed App IDs: %v", allowedAppIDs)
+	log.Printf("Custom Locations File: %s", *customLocationsFlag)
+
 	loadCustomLocations(*customLocationsFlag)
 
 	// Initialize Redis
