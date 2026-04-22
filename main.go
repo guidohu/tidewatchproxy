@@ -74,6 +74,7 @@ type DenseTideData struct {
 type DenseTidePoint struct {
 	Timestamp int64   `json:"ts"`
 	Height    float64 `json:"h"`
+	Type      string  `json:"t,omitempty"`
 }
 
 func main() {
@@ -425,6 +426,7 @@ func handleTides(c *gin.Context) {
 		Data []struct {
 			Height float64 `json:"height"`
 			Time   string  `json:"time"`
+			Type   string  `json:"type"`
 		} `json:"data"`
 	}
 
@@ -439,6 +441,7 @@ func handleTides(c *gin.Context) {
 		dense.Data = append(dense.Data, DenseTidePoint{
 			Timestamp: t.Unix(),
 			Height:    d.Height,
+			Type:      d.Type,
 		})
 	}
 
