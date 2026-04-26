@@ -37,6 +37,7 @@ var (
 	locationCache    = make(map[string]LocationResponse)
 	locationCacheMu  sync.RWMutex
 	useCache         bool
+	debug            bool
 	allowedAppIDs    []string
 )
 
@@ -87,6 +88,7 @@ func main() {
 		allowedAppIDsFlag   = flag.String("allowed-app-ids", getEnv("ALLOWED_APP_IDS", ""), "Comma separated list of allowed App IDs or API keys")
 	)
 	flag.BoolVar(&useCache, "use-cache", true, "Enable Redis caching")
+	flag.BoolVar(&debug, "debug", getEnv("DEBUG", "false") == "true", "Print raw Stormglass API responses to console")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -97,6 +99,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  REDIS_ADDR          Redis address\n")
 		fmt.Fprintf(os.Stderr, "  PORT                Port to listen on\n")
 		fmt.Fprintf(os.Stderr, "  ALLOWED_APP_IDS     Comma separated list of allowed App IDs or API keys\n")
+		fmt.Fprintf(os.Stderr, "  DEBUG               Set to 'true' to enable debug logging\n")
 	}
 	flag.Parse()
 
@@ -294,8 +297,10 @@ func handleWeather(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+	logStormglass("GET", url, body)
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -324,7 +329,7 @@ func handleWeather(c *gin.Context) {
 		} `json:"hours"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
 		return
 	}
@@ -375,6 +380,7 @@ func handleTides(c *gin.Context) {
 	lng := c.Query("lng")
 	start := c.Query("start")
 	end := c.Query("end")
+	datum := c.Query("datum")
 
 	latVal, latErr := strconv.ParseFloat(lat, 64)
 	lngVal, lngErr := strconv.ParseFloat(lng, 64)
@@ -391,8 +397,8 @@ func handleTides(c *gin.Context) {
 
 	startTime, endTime := parseAndClampTime(start, end)
 
-	cacheKey := fmt.Sprintf("tides:%.2f:%.2f:%d:%d",
-		latVal, lngVal, startTime.Unix(), endTime.Unix())
+	cacheKey := fmt.Sprintf("tides:%.2f:%.2f:%d:%d:%s",
+		latVal, lngVal, startTime.Unix(), endTime.Unix(), datum)
 
 	if useCache {
 		if val, err := redisClient.Get(ctx, cacheKey).Result(); err == nil {
@@ -405,6 +411,9 @@ func handleTides(c *gin.Context) {
 	apiKey := c.GetString("api_key")
 	url := fmt.Sprintf("%s/v2/tide/extremes/point?lat=%s&lng=%s&start=%d&end=%d",
 		StormglassBaseURL, lat, lng, startTime.Unix(), endTime.Unix())
+	if datum != "" {
+		url += "&datum=" + datum
+	}
 
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", apiKey)
@@ -416,8 +425,10 @@ func handleTides(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+	logStormglass("GET", url, body)
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -430,7 +441,7 @@ func handleTides(c *gin.Context) {
 		} `json:"data"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
 		return
 	}
@@ -504,8 +515,10 @@ func handleSeaLevel(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+	logStormglass("GET", url, body)
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -517,7 +530,7 @@ func handleSeaLevel(c *gin.Context) {
 		} `json:"data"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
 		return
 	}
@@ -663,4 +676,25 @@ func isValidCoordinate(val float64) bool {
 
 func toPtr(f float64) *float64 {
 	return &f
+}
+
+func logStormglass(method, url string, rawResponse []byte) {
+	if !debug {
+		return
+	}
+
+	var prettyBody string
+	var obj interface{}
+	if err := json.Unmarshal(rawResponse, &obj); err == nil {
+		if pretty, err := json.MarshalIndent(obj, "", "  "); err == nil {
+			prettyBody = string(pretty)
+		} else {
+			prettyBody = string(rawResponse)
+		}
+	} else {
+		prettyBody = string(rawResponse)
+	}
+
+	log.Printf("DEBUG Stormglass Request: %s %s", method, url)
+	log.Printf("DEBUG Stormglass Response:\n%s", prettyBody)
 }
