@@ -158,12 +158,19 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 	}
 
 	dense := models.DenseTideData{Data: make([]models.DenseTidePoint, 0)}
+	var lastProcessedHour time.Time
 	for _, e := range raw.Timeline {
 		t, _ := time.Parse(time.RFC3339, e.Time)
-		dense.Data = append(dense.Data, models.DenseTidePoint{
-			Timestamp: t.Unix(),
-			Height:    e.Level,
-		})
+		if t.Minute() == 0 && t.Second() == 0 {
+			hour := t.Truncate(time.Hour)
+			if !hour.Equal(lastProcessedHour) {
+				dense.Data = append(dense.Data, models.DenseTidePoint{
+					Timestamp: t.Unix(),
+					Height:    e.Level,
+				})
+				lastProcessedHour = hour
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, dense)
