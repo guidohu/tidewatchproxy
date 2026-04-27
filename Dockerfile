@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o proxy .
+RUN CGO_ENABLED=0 GOOS=linux go build -o proxy ./cmd/proxy/main.go
 
 # Run stage
 FROM alpine:latest

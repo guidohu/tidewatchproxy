@@ -19,7 +19,7 @@ It fetches data from the Stormglass API, filters for requested parameters, and r
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Docker Compose](https://docs.docker.com/compose/install/)
-- A Stormglass.io API key if you want to serve users that don't have to provide a key.
+- A Stormglass.io API key if you want to use the Stormglass-based weather and tide endpoints.
 
 ## Running Locally
 
@@ -126,12 +126,31 @@ curl "http://localhost:8080/data/reverse-geocode-client?latitude=21.27&longitude
 }
 ```
 
+## OpenWaters Tide API
+
+The proxy also supports endpoints that use the [OpenWaters.io](https://openwaters.io/) API. These endpoints do **not** require a Stormglass.io API key.
+
+### Tide Extremes (OpenWaters)
+`GET /tides/extremes?latitude=...&longitude=...&start=...&end=...&datum=...&units=...`
+- **Parameters**: 
+    - `latitude`, `longitude`: (Required) Coordinates.
+    - `start`, `end`: (Optional) Unix timestamps.
+    - `datum`: (Optional) `LAT`, `MSL`, or `MLLW`.
+    - `units`: (Optional) `meters` or `feet`.
+- Returns `DenseTideData` (same as Stormglass extremes).
+
+### Tide Timeline (OpenWaters)
+`GET /tides/timeline?latitude=...&longitude=...&start=...&end=...&datum=...&units=...`
+- **Parameters**: Same as above.
+- Returns `DenseTideData` (same as Stormglass sea level).
+
 ## Environment Variables
 
-- `STORMGLASS_API_KEY`: Your Stormglass.io API key.
+- `STORMGLASS_API_KEY`: Your Stormglass.io API key (used for `/v2/` endpoints). **Not required** for OpenWaters or Geocoding endpoints.
 - `REDIS_ADDR`: Address of the Redis instance (default: `redis:6379`).
 - `PORT`: Port to listen on (default: `8080`).
-- `ALLOWED_APP_IDS`: Restrict proxy access to a comma-separated list of App IDs. Clients must pass this as `X-App-Id` headers or `app_id` query parameters. Leave blank to allow any request.
+- `ALLOWED_APP_IDS`: Restrict proxy access to a comma-separated list of App IDs (applies to all endpoints).
+- `DEBUG`: Set to `true` to enable detailed logging of API requests and responses.
 
 ## Development
 
