@@ -53,4 +53,6 @@ var allowedWeatherParams = map[string]bool{
 	"secondarySwellHeight":    true,
 	"secondarySwellPeriod":    true,
 	"secondarySwellDirection": true,
+	"windDirection":           true,
+	"windSpeed":               true,
 }

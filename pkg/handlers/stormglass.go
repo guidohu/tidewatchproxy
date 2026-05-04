@@ -112,6 +112,12 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 			SecondarySwellPeriod struct {
 				NOAA float64 `json:"noaa"`
 			} `json:"secondarySwellPeriod"`
+			WindDirection struct {
+				NOAA float64 `json:"noaa"`
+			} `json:"windDirection"`
+			WindSpeed struct {
+				NOAA float64 `json:"noaa"`
+			} `json:"windSpeed"`
 		} `json:"hours"`
 	}
 
@@ -147,6 +153,12 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 		}
 		if requested["secondarySwellPeriod"] {
 			point.P2 = util.ToPtr(h_raw.SecondarySwellPeriod.NOAA)
+		}
+		if requested["windDirection"] {
+			point.WD = util.ToPtr(h_raw.WindDirection.NOAA)
+		}
+		if requested["windSpeed"] {
+			point.WS = util.ToPtr(h_raw.WindSpeed.NOAA)
 		}
 
 		dense.Data = append(dense.Data, point)

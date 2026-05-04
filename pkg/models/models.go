@@ -19,6 +19,8 @@ type DenseWeatherPoint struct {
 	H2        *float64 `json:"h2,omitempty"`
 	D2        *float64 `json:"d2,omitempty"`
 	P2        *float64 `json:"p2,omitempty"`
+	WD        *float64 `json:"wd,omitempty"`
+	WS        *float64 `json:"ws,omitempty"`
 }
 
 type DenseTideData struct {
