@@ -13,6 +13,21 @@ import (
 	"tide_watch_proxy/pkg/util"
 )
 
+// @Summary Get Tide Extremes (OpenWaters)
+// @Description Fetch tide extremes (high/low) from OpenWaters API
+// @Tags OpenWaters
+// @Produce json
+// @Param latitude query string true "Latitude"
+// @Param longitude query string true "Longitude"
+// @Param start query string false "Start time (Unix timestamp)"
+// @Param end query string false "End time (Unix timestamp)"
+// @Param datum query string false "Datum (LAT, MSL, MLLW)"
+// @Param units query string false "Units (default: meters)"
+// @Success 200 {object} models.DenseTideData
+// @Failure 400 {object} map[string]string "Bad Request"
+// @Failure 500 {object} map[string]string "Internal Server Error"
+// @Security AppIdAuth
+// @Router /tides/extremes [get]
 func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	latitude := c.Query("latitude")
 	longitude := c.Query("longitude")
@@ -94,6 +109,21 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	c.JSON(http.StatusOK, dense)
 }
 
+// @Summary Get Tide Timeline (OpenWaters)
+// @Description Fetch tide timeline data from OpenWaters API
+// @Tags OpenWaters
+// @Produce json
+// @Param latitude query string true "Latitude"
+// @Param longitude query string true "Longitude"
+// @Param start query string false "Start time (Unix timestamp)"
+// @Param end query string false "End time (Unix timestamp)"
+// @Param datum query string false "Datum (LAT, MSL, MLLW)"
+// @Param units query string false "Units (default: meters)"
+// @Success 200 {object} models.DenseTideData
+// @Failure 400 {object} map[string]string "Bad Request"
+// @Failure 500 {object} map[string]string "Internal Server Error"
+// @Security AppIdAuth
+// @Router /tides/timeline [get]
 func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 	latitude := c.Query("latitude")
 	longitude := c.Query("longitude")
