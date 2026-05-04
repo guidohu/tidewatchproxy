@@ -14,6 +14,22 @@ import (
 	"tide_watch_proxy/pkg/util"
 )
 
+// @Summary Get Weather Data
+// @Description Fetch weather/swell/wind data from Stormglass API
+// @Tags Stormglass
+// @Produce json
+// @Param lat query string true "Latitude"
+// @Param lng query string true "Longitude"
+// @Param params query string true "Comma-separated parameters"
+// @Param start query string false "Start time (Unix timestamp)"
+// @Param end query string false "End time (Unix timestamp)"
+// @Param source query string false "Source (default: noaa)"
+// @Success 200 {object} models.DenseWeatherData
+// @Failure 400 {object} map[string]string "Bad Request"
+// @Failure 500 {object} map[string]string "Internal Server Error"
+// @Security AppIdAuth
+// @Security ApiKeyAuth
+// @Router /v2/weather/point [get]
 func (h *Handler) HandleWeather(c *gin.Context) {
 	lat := c.Query("lat")
 	lng := c.Query("lng")
@@ -173,6 +189,21 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 	c.JSON(http.StatusOK, dense)
 }
 
+// @Summary Get Tide Extremes (Stormglass)
+// @Description Fetch tide extremes from Stormglass API
+// @Tags Stormglass
+// @Produce json
+// @Param lat query string true "Latitude"
+// @Param lng query string true "Longitude"
+// @Param start query string false "Start time (Unix timestamp)"
+// @Param end query string false "End time (Unix timestamp)"
+// @Param datum query string false "Datum"
+// @Success 200 {object} models.DenseTideData
+// @Failure 400 {object} map[string]string "Bad Request"
+// @Failure 500 {object} map[string]string "Internal Server Error"
+// @Security AppIdAuth
+// @Security ApiKeyAuth
+// @Router /v2/tide/extremes/point [get]
 func (h *Handler) HandleTides(c *gin.Context) {
 	lat := c.Query("lat")
 	lng := c.Query("lng")
@@ -263,6 +294,21 @@ func (h *Handler) HandleTides(c *gin.Context) {
 	c.JSON(http.StatusOK, dense)
 }
 
+// @Summary Get Sea Level (Stormglass)
+// @Description Fetch sea level timeline from Stormglass API
+// @Tags Stormglass
+// @Produce json
+// @Param lat query string true "Latitude"
+// @Param lng query string true "Longitude"
+// @Param start query string false "Start time (Unix timestamp)"
+// @Param end query string false "End time (Unix timestamp)"
+// @Param datum query string false "Datum"
+// @Success 200 {object} models.DenseTideData
+// @Failure 400 {object} map[string]string "Bad Request"
+// @Failure 500 {object} map[string]string "Internal Server Error"
+// @Security AppIdAuth
+// @Security ApiKeyAuth
+// @Router /v2/tide/sea-level/point [get]
 func (h *Handler) HandleSeaLevel(c *gin.Context) {
 	lat := c.Query("lat")
 	lng := c.Query("lng")

@@ -12,10 +12,30 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	_ "tide_watch_proxy/docs" // Import generated docs
 	"tide_watch_proxy/pkg/handlers"
 	"tide_watch_proxy/pkg/middleware"
 	"tide_watch_proxy/pkg/util"
 )
+
+// @title Tide Watch Proxy API
+// @version 1.0
+// @description Proxy server for the Tide Watch Garmin application, providing weather, tides, and geocoding. If server runs with API key restriction, clients need to provide an API key.
+// @host localhost:8080
+// @BasePath /
+
+// @securityDefinitions.apikey AppIdAuth
+// @in header
+// @name X-App-Id
+// @description Allowed App ID for accessing the API.
+
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name Authorization
+// @description Stormglass API Key for weather and some tide endpoints.
 
 var (
 	redisClient      *redis.Client
@@ -98,6 +118,9 @@ func main() {
 	r.GET("/tides/extremes", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersExtremes)
 	r.GET("/tides/timeline", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersTimeline)
 	r.GET("/data/reverse-geocode-client", middleware.AppIDMiddleware(allowedAppIDs), h.HandleReverseGeocode)
+
+	// Swagger documentation route
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	r.Run(":" + port)
 }

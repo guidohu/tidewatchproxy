@@ -11,6 +11,17 @@ import (
 	"tide_watch_proxy/pkg/util"
 )
 
+// @Summary Reverse Geocode
+// @Description Get location name from latitude and longitude using BigDataCloud
+// @Tags Geocoding
+// @Produce json
+// @Param latitude query string true "Latitude"
+// @Param longitude query string true "Longitude"
+// @Success 200 {object} models.LocationResponse
+// @Failure 400 {object} map[string]string "Bad Request"
+// @Failure 500 {object} map[string]string "Internal Server Error"
+// @Security AppIdAuth
+// @Router /data/reverse-geocode-client [get]
 func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 	latStr := c.Query("latitude")
 	lngStr := c.Query("longitude")

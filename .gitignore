@@ -33,3 +33,9 @@ go.work.sum
 
 # Proxy binary created via `go build`
 tide_watch_proxy
+
+# Antigravity Skills
+.antigravity/
+
+# Swagger Docs
+docs/
