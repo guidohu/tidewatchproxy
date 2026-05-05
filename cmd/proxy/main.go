@@ -140,6 +140,7 @@ func main() {
 	r.GET("/dashboard/api/locations", dashboardHandler.HandleLocationsAPI)
 	r.GET("/dashboard/api/stats", dashboardHandler.HandleStatsAPI)
 	r.GET("/dashboard/api/reasons", dashboardHandler.HandleFailureReasonsAPI)
+	r.GET("/dashboard/api/errors", dashboardHandler.HandleErrorLogsAPI)
 
 	// Swagger documentation route (no logging)
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

@@ -80,6 +80,7 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 
 	if resp.StatusCode != http.StatusOK {
 		c.Set("error_type", fmt.Sprintf("OpenWaters HTTP %d", resp.StatusCode))
+		c.Set("upstream_response", string(body))
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -182,6 +183,7 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 
 	if resp.StatusCode != http.StatusOK {
 		c.Set("error_type", fmt.Sprintf("OpenWaters HTTP %d", resp.StatusCode))
+		c.Set("upstream_response", string(body))
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}

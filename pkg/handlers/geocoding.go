@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
@@ -66,10 +67,12 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 		return
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		c.Set("error_type", fmt.Sprintf("BigDataCloud HTTP %d", resp.StatusCode))
-		c.JSON(resp.StatusCode, gin.H{"error": "BigDataCloud returned error"})
+		c.Set("upstream_response", string(body))
+		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
 
@@ -80,8 +83,9 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 		CountryCode string `json:"countryCode"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		c.Set("error_type", "Parse Error")
+		c.Set("upstream_response", string(body))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse BigDataCloud response"})
 		return
 	}
