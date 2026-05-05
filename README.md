@@ -14,6 +14,9 @@ It fetches data from the Stormglass API, filters for requested parameters, and r
 - **Redis Caching**: Caches responses locally to stay within API rate limits and speed up subsequent requests.
 - **Strict Validation**: Enforces input parameters and filters requested weather parameters.
 - **Access Control**: Secures proxy access with allowed App IDs.
+- **OpenAPI Documentation**: Interactive Swagger UI for API exploration and testing.
+- **Visual Dashboard**: A map-based dashboard to visualize requested GPS locations.
+
 
 ## Prerequisites
 
@@ -143,6 +146,19 @@ The proxy also supports endpoints that use the [OpenWaters.io](https://openwater
 `GET /tides/timeline?latitude=...&longitude=...&start=...&end=...&datum=...&units=...`
 - **Parameters**: Same as above.
 - Returns `DenseTideData` (same as Stormglass sea level).
+
+## Documentation & Visualization
+
+> [!CAUTION]
+> **Security Note**: Both the Swagger UI and the Dashboard do not have built-in authentication. It is strongly recommended to protect these routes using a reverse proxy (like Nginx or Traefik) with Basic Auth or IP restriction, and to ensure they are not publicly accessible.
+
+### Swagger UI
+The proxy includes built-in OpenAPI documentation. You can explore and test the API endpoints using the Swagger UI.
+- **URL**: `http://localhost:8080/swagger/index.html`
+
+### GPS Dashboard
+A map-based dashboard is available to visualize the locations from which requests are being made. Coordinates are aggregated to a ~1km resolution for privacy.
+- **URL**: `http://localhost:8080/dashboard`
 
 ## Environment Variables
 
