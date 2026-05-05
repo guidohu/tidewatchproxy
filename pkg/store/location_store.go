@@ -68,8 +68,12 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 	}
 
 	// Migrations: Add columns if they don't exist (ignore errors if they already do)
+	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN timestamp DATETIME DEFAULT CURRENT_TIMESTAMP")
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN lat REAL")
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN lng REAL")
+
+	// Ensure existing rows have a timestamp if it was NULL
+	_, _ = db.Exec("UPDATE requests SET timestamp = CURRENT_TIMESTAMP WHERE timestamp IS NULL")
 
 	return &LocationStore{db: db}, nil
 }

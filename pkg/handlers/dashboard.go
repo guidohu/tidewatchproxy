@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -20,9 +21,11 @@ func (h *DashboardHandler) HandleLocationsAPI(c *gin.Context) {
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
 	locations, err := h.store.GetAllLocations(days)
 	if err != nil {
+		log.Printf("Error fetching locations: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch locations"})
 		return
 	}
+	log.Printf("Fetched %d locations for last %d days", len(locations), days)
 	c.JSON(http.StatusOK, locations)
 }
 
@@ -30,9 +33,11 @@ func (h *DashboardHandler) HandleStatsAPI(c *gin.Context) {
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
 	stats, err := h.store.GetBackendStats(days)
 	if err != nil {
+		log.Printf("Error fetching stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch stats"})
 		return
 	}
+	log.Printf("Fetched stats for %d backends for last %d days", len(stats), days)
 	c.JSON(http.StatusOK, stats)
 }
 
@@ -40,9 +45,11 @@ func (h *DashboardHandler) HandleFailureReasonsAPI(c *gin.Context) {
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
 	reasons, err := h.store.GetFailureReasons(days)
 	if err != nil {
+		log.Printf("Error fetching failure reasons: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch failure reasons"})
 		return
 	}
+	log.Printf("Fetched %d failure reasons for last %d days", len(reasons), days)
 	c.JSON(http.StatusOK, reasons)
 }
 
