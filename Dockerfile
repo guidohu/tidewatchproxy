@@ -24,9 +24,12 @@ WORKDIR /root/
 # Copy the binary from the builder stage
 COPY --from=builder /app/proxy .
 
+# Setup directory structure
+RUN mkdir -p /app/database
+
 # Expose the port the app runs on
 EXPOSE 8080
 
 # Command to run the application
 ENTRYPOINT ["./proxy"]
-CMD ["--use-cache=true"]
+CMD ["--use-cache=true", "--db-path=/app/database/metrics.db"]
