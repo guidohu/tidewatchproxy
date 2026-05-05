@@ -116,6 +116,7 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 		} else {
 			c.Set("error_type", fmt.Sprintf("Stormglass HTTP %d", resp.StatusCode))
 		}
+		c.Set("upstream_response", string(body))
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -283,6 +284,7 @@ func (h *Handler) HandleTides(c *gin.Context) {
 		} else {
 			c.Set("error_type", fmt.Sprintf("Stormglass HTTP %d", resp.StatusCode))
 		}
+		c.Set("upstream_response", string(body))
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -400,6 +402,7 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 		} else {
 			c.Set("error_type", fmt.Sprintf("Stormglass HTTP %d", resp.StatusCode))
 		}
+		c.Set("upstream_response", string(body))
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}

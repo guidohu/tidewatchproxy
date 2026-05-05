@@ -53,6 +53,17 @@ func (h *DashboardHandler) HandleFailureReasonsAPI(c *gin.Context) {
 	c.JSON(http.StatusOK, reasons)
 }
 
+func (h *DashboardHandler) HandleErrorLogsAPI(c *gin.Context) {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
+	logs, err := h.store.GetErrorLogs(days)
+	if err != nil {
+		log.Printf("Error fetching error logs: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch error logs"})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
+}
+
 func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
 	html := `<!DOCTYPE html>
 <html>
@@ -125,6 +136,45 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
         .failed { color: #ef4444; }
         .total { color: #1e293b; }
 
+        .error-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 0.85rem;
+        }
+        .error-table th, .error-table td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .error-table th {
+            background-color: #f8fafc;
+            color: #64748b;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+        .error-table tr:hover { background-color: #f1f5f9; }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            background-color: #fee2e2;
+            color: #ef4444;
+        }
+        .code-block {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: monospace;
+            color: #475569;
+            background: #f8fafc;
+            padding: 2px 4px;
+            border-radius: 4px;
+            cursor: help;
+        }
+
         select {
             padding: 8px 12px;
             border-radius: 6px;
@@ -178,6 +228,27 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div class="card">
+            <h2>Recent Error Logs</h2>
+            <table class="error-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Backend</th>
+                        <th>Path</th>
+                        <th>Status</th>
+                        <th>Error Type</th>
+                        <th>Request</th>
+                        <th>Upstream Resp</th>
+                        <th>Response sent</th>
+                    </tr>
+                </thead>
+                <tbody id="errorLogBody">
+                    <tr><td colspan="8" style="text-align:center">No error logs available</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
@@ -256,6 +327,29 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                             }
                         }
                     });
+                });
+
+            // Fetch Error Logs
+            fetch('/dashboard/api/errors?days=' + days)
+                .then(res => res.json())
+                .then(data => {
+                    const body = document.getElementById('errorLogBody');
+                    if (!data || data.length === 0) {
+                        body.innerHTML = '<tr><td colspan="8" style="text-align:center">No error logs available</td></tr>';
+                        return;
+                    }
+                    body.innerHTML = data.map(log => {
+                        return '<tr>' +
+                            '<td>' + new Date(log.timestamp).toLocaleString() + '</td>' +
+                            '<td>' + log.backend + '</td>' +
+                            '<td><code>' + log.path + '</code></td>' +
+                            '<td><span class="status-badge">' + log.status_code + '</span></td>' +
+                            '<td>' + log.error_type + '</td>' +
+                            '<td><div class="code-block" title="' + (log.request_body || '').replace(/"/g, '&quot;') + '">' + (log.request_body || 'N/A') + '</div></td>' +
+                            '<td><div class="code-block" title="' + (log.upstream_response || '').replace(/"/g, '&quot;') + '">' + (log.upstream_response || 'N/A') + '</div></td>' +
+                            '<td><div class="code-block" title="' + (log.response_body || '').replace(/"/g, '&quot;') + '">' + log.response_body + '</div></td>' +
+                        '</tr>';
+                    }).join('');
                 });
         }
 

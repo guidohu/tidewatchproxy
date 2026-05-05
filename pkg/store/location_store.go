@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"time"
 
 	_ "modernc.org/sqlite"
 	"tide_watch_proxy/pkg/util"
@@ -62,20 +63,62 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 			lat REAL,
 			lng REAL
 		);
+		CREATE TABLE IF NOT EXISTS error_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+			method TEXT,
+			path TEXT,
+			query TEXT,
+			status_code INTEGER,
+			request_body TEXT,
+			response_body TEXT,
+			upstream_response TEXT,
+			backend TEXT,
+			error_type TEXT
+		);
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
-	// Migrations: Add columns if they don't exist (ignore errors if they already do)
+	// Migrations: Add columns if they don't exist
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN timestamp DATETIME DEFAULT CURRENT_TIMESTAMP")
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN lat REAL")
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN lng REAL")
+	_, _ = db.Exec("ALTER TABLE error_logs ADD COLUMN upstream_response TEXT")
 
 	// Ensure existing rows have a timestamp if it was NULL
 	_, _ = db.Exec("UPDATE requests SET timestamp = CURRENT_TIMESTAMP WHERE timestamp IS NULL")
 
-	return &LocationStore{db: db}, nil
+	store := &LocationStore{db: db}
+
+	// Start background cleanup
+	go store.startCleanupTask()
+
+	return store, nil
+}
+
+func (s *LocationStore) startCleanupTask() {
+	// Run cleanup immediately on start
+	s.CleanupOldLogs()
+
+	// Then every 6 hours
+	ticker := time.NewTicker(6 * time.Hour)
+	for range ticker.C {
+		s.CleanupOldLogs()
+	}
+}
+
+func (s *LocationStore) CleanupOldLogs() {
+	// Clean up requests and error logs older than 30 days
+	_, err := s.db.Exec("DELETE FROM requests WHERE timestamp < datetime('now', '-30 days')")
+	if err != nil {
+		log.Printf("Error cleaning up requests: %v", err)
+	}
+	_, err = s.db.Exec("DELETE FROM error_logs WHERE timestamp < datetime('now', '-30 days')")
+	if err != nil {
+		log.Printf("Error cleaning up error logs: %v", err)
+	}
 }
 
 func (s *LocationStore) LogLocation(lat, lng float64) {
@@ -139,6 +182,59 @@ func (s *LocationStore) LogRequest(backend string, statusCode int, errorType str
 	if err != nil {
 		log.Printf("Error logging request: %v", err)
 	}
+}
+
+type ErrorLog struct {
+	ID               int    `json:"id"`
+	Timestamp        string `json:"timestamp"`
+	Method           string `json:"method"`
+	Path             string `json:"path"`
+	Query            string `json:"query"`
+	StatusCode       int    `json:"status_code"`
+	RequestBody      string `json:"request_body"`
+	ResponseBody     string `json:"response_body"`
+	UpstreamResponse string `json:"upstream_response"`
+	Backend          string `json:"backend"`
+	ErrorType        string `json:"error_type"`
+}
+
+func (s *LocationStore) LogError(entry ErrorLog) {
+	_, err := s.db.Exec(`
+		INSERT INTO error_logs (method, path, query, status_code, request_body, response_body, upstream_response, backend, error_type)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, entry.Method, entry.Path, entry.Query, entry.StatusCode, entry.RequestBody, entry.ResponseBody, entry.UpstreamResponse, entry.Backend, entry.ErrorType)
+	if err != nil {
+		log.Printf("Error saving error log: %v", err)
+	}
+}
+
+func (s *LocationStore) GetErrorLogs(days int) ([]ErrorLog, error) {
+	query := `SELECT id, timestamp, method, path, query, status_code, request_body, response_body, upstream_response, backend, error_type FROM error_logs`
+	var args []interface{}
+
+	if days > 0 {
+		query += " WHERE timestamp >= datetime('now', ?)"
+		args = append(args, fmt.Sprintf("-%d days", days))
+	}
+
+	query += " ORDER BY timestamp DESC LIMIT 50"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []ErrorLog
+	for rows.Next() {
+		var l ErrorLog
+		err := rows.Scan(&l.ID, &l.Timestamp, &l.Method, &l.Path, &l.Query, &l.StatusCode, &l.RequestBody, &l.ResponseBody, &l.UpstreamResponse, &l.Backend, &l.ErrorType)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	return logs, nil
 }
 
 func (s *LocationStore) GetBackendStats(days int) ([]BackendStats, error) {
