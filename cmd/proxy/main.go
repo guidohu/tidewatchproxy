@@ -18,6 +18,7 @@ import (
 	_ "tide_watch_proxy/docs" // Import generated docs
 	"tide_watch_proxy/pkg/handlers"
 	"tide_watch_proxy/pkg/middleware"
+	"tide_watch_proxy/pkg/store"
 	"tide_watch_proxy/pkg/util"
 )
 
@@ -55,6 +56,7 @@ func main() {
 		portFlag            = flag.String("port", getEnv("PORT", "8080"), "Port to listen on")
 		customLocationsFlag = flag.String("custom-locations", "custom_locations.csv", "Path to custom locations CSV file")
 		allowedAppIDsFlag   = flag.String("allowed-app-ids", getEnv("ALLOWED_APP_IDS", ""), "Comma separated list of allowed App IDs or API keys")
+		dbPathFlag          = flag.String("db-path", getEnv("DB_PATH", "metrics.db"), "Path to SQLite database for statistics")
 	)
 	flag.BoolVar(&useCache, "use-cache", true, "Enable Redis caching")
 	flag.BoolVar(&debug, "debug", getEnv("DEBUG", "false") == "true", "Print raw Stormglass API responses to console")
@@ -68,6 +70,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  REDIS_ADDR          Redis address\n")
 		fmt.Fprintf(os.Stderr, "  PORT                Port to listen on\n")
 		fmt.Fprintf(os.Stderr, "  ALLOWED_APP_IDS     Comma separated list of allowed App IDs or API keys\n")
+		fmt.Fprintf(os.Stderr, "  DB_PATH             Path to SQLite database for statistics\n")
 		fmt.Fprintf(os.Stderr, "  DEBUG               Set to 'true' to enable debug logging\n")
 	}
 	flag.Parse()
@@ -89,6 +92,7 @@ func main() {
 	log.Printf("Stormglass API Key: %s", stormglassAPIKey)
 	log.Printf("Allowed App IDs: %v", allowedAppIDs)
 	log.Printf("Custom Locations File: %s", *customLocationsFlag)
+	log.Printf("SQLite DB Path: %s", *dbPathFlag)
 	log.Printf("Debug Mode: %v", debug)
 
 	loadCustomLocations(*customLocationsFlag)
@@ -107,17 +111,31 @@ func main() {
 		}
 	}
 
+	// Initialize SQLite Location Store
+	locationStore, err := store.NewLocationStore(*dbPathFlag)
+	if err != nil {
+		log.Fatalf("Failed to initialize location store: %v", err)
+	}
+
 	// Initialize Handler
 	h := handlers.NewHandler(redisClient, stormglassAPIKey, useCache, customLocations, debug)
+	dashboardHandler := handlers.NewDashboardHandler(locationStore)
 
 	r := gin.Default()
 
-	r.GET("/v2/weather/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleWeather)
-	r.GET("/v2/tide/extremes/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleTides)
-	r.GET("/v2/tide/sea-level/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleSeaLevel)
-	r.GET("/tides/extremes", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersExtremes)
-	r.GET("/tides/timeline", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersTimeline)
-	r.GET("/data/reverse-geocode-client", middleware.AppIDMiddleware(allowedAppIDs), h.HandleReverseGeocode)
+	// Location logging middleware
+	loggerMiddleware := middleware.LocationLogger(locationStore)
+
+	r.GET("/v2/weather/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), loggerMiddleware, h.HandleWeather)
+	r.GET("/v2/tide/extremes/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), loggerMiddleware, h.HandleTides)
+	r.GET("/v2/tide/sea-level/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), loggerMiddleware, h.HandleSeaLevel)
+	r.GET("/tides/extremes", middleware.AppIDMiddleware(allowedAppIDs), loggerMiddleware, h.HandleOpenWatersExtremes)
+	r.GET("/tides/timeline", middleware.AppIDMiddleware(allowedAppIDs), loggerMiddleware, h.HandleOpenWatersTimeline)
+	r.GET("/data/reverse-geocode-client", middleware.AppIDMiddleware(allowedAppIDs), loggerMiddleware, h.HandleReverseGeocode)
+
+	// Dashboard routes
+	r.GET("/dashboard", dashboardHandler.HandleDashboard)
+	r.GET("/api/locations", dashboardHandler.HandleLocationsAPI)
 
 	// Swagger documentation route
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
