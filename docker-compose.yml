@@ -10,8 +10,12 @@ services:
       - ALLOWED_APP_IDS=myappid,myotherappid
     depends_on:
       - redis
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
-      - ./custom_locations.csv:/app/custom_locations.csv
+      - ./custom_locations.csv:/app/custom_locations.csv:ro
     command: ["--use-cache=false", "--debug=true"]
 
   redis:
