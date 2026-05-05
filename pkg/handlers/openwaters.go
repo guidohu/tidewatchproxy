@@ -29,6 +29,7 @@ import (
 // @Security AppIdAuth
 // @Router /tides/extremes [get]
 func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
+	c.Set("backend", "OpenWaters")
 	latitude := c.Query("latitude")
 	longitude := c.Query("longitude")
 	start := c.Query("start")
@@ -37,11 +38,13 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	units := c.DefaultQuery("units", "meters")
 
 	if latitude == "" || longitude == "" {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude are required"})
 		return
 	}
 
 	if datum != "" && datum != "LAT" && datum != "MSL" && datum != "MLLW" {
+		c.Set("error_type", "Invalid Datum")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid datum. Allowed values: LAT, MSL, MLLW"})
 		return
 	}
@@ -66,6 +69,7 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	req, _ := http.NewRequest("GET", url, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		c.Set("error_type", "OpenWaters Connection Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from OpenWaters"})
 		return
 	}
@@ -75,6 +79,7 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	util.LogStormglass(h.debug, "GET", url, body)
 
 	if resp.StatusCode != http.StatusOK {
+		c.Set("error_type", fmt.Sprintf("OpenWaters HTTP %d", resp.StatusCode))
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -88,6 +93,7 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(body, &raw); err != nil {
+		c.Set("error_type", "Parse Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse OpenWaters response"})
 		return
 	}
@@ -125,6 +131,7 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 // @Security AppIdAuth
 // @Router /tides/timeline [get]
 func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
+	c.Set("backend", "OpenWaters")
 	latitude := c.Query("latitude")
 	longitude := c.Query("longitude")
 	start := c.Query("start")
@@ -133,11 +140,13 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 	units := c.DefaultQuery("units", "meters")
 
 	if latitude == "" || longitude == "" {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude are required"})
 		return
 	}
 
 	if datum != "" && datum != "LAT" && datum != "MSL" && datum != "MLLW" {
+		c.Set("error_type", "Invalid Datum")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid datum. Allowed values: LAT, MSL, MLLW"})
 		return
 	}
@@ -162,6 +171,7 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 	req, _ := http.NewRequest("GET", url, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		c.Set("error_type", "OpenWaters Connection Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from OpenWaters"})
 		return
 	}
@@ -171,6 +181,7 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 	util.LogStormglass(h.debug, "GET", url, body)
 
 	if resp.StatusCode != http.StatusOK {
+		c.Set("error_type", fmt.Sprintf("OpenWaters HTTP %d", resp.StatusCode))
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -183,6 +194,7 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(body, &raw); err != nil {
+		c.Set("error_type", "Parse Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse OpenWaters response"})
 		return
 	}

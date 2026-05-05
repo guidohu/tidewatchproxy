@@ -123,21 +123,25 @@ func main() {
 
 	r := gin.Default()
 
-	// Location logging middleware
-	loggerMiddleware := middleware.LocationLogger(locationStore)
+	// API routes with logging
+	api := r.Group("/")
+	api.Use(middleware.LocationLogger(locationStore))
+	{
+		api.GET("/v2/weather/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleWeather)
+		api.GET("/v2/tide/extremes/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleTides)
+		api.GET("/v2/tide/sea-level/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleSeaLevel)
+		api.GET("/tides/extremes", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersExtremes)
+		api.GET("/tides/timeline", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersTimeline)
+		api.GET("/data/reverse-geocode-client", middleware.AppIDMiddleware(allowedAppIDs), h.HandleReverseGeocode)
+	}
 
-	r.GET("/v2/weather/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), loggerMiddleware, h.HandleWeather)
-	r.GET("/v2/tide/extremes/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), loggerMiddleware, h.HandleTides)
-	r.GET("/v2/tide/sea-level/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), loggerMiddleware, h.HandleSeaLevel)
-	r.GET("/tides/extremes", middleware.AppIDMiddleware(allowedAppIDs), loggerMiddleware, h.HandleOpenWatersExtremes)
-	r.GET("/tides/timeline", middleware.AppIDMiddleware(allowedAppIDs), loggerMiddleware, h.HandleOpenWatersTimeline)
-	r.GET("/data/reverse-geocode-client", middleware.AppIDMiddleware(allowedAppIDs), loggerMiddleware, h.HandleReverseGeocode)
-
-	// Dashboard routes
+	// Dashboard routes (no logging)
 	r.GET("/dashboard", dashboardHandler.HandleDashboard)
-	r.GET("/api/locations", dashboardHandler.HandleLocationsAPI)
+	r.GET("/dashboard/api/locations", dashboardHandler.HandleLocationsAPI)
+	r.GET("/dashboard/api/stats", dashboardHandler.HandleStatsAPI)
+	r.GET("/dashboard/api/reasons", dashboardHandler.HandleFailureReasonsAPI)
 
-	// Swagger documentation route
+	// Swagger documentation route (no logging)
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	r.Run(":" + port)

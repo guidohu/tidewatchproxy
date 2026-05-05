@@ -31,6 +31,7 @@ import (
 // @Security ApiKeyAuth
 // @Router /v2/weather/point [get]
 func (h *Handler) HandleWeather(c *gin.Context) {
+	c.Set("backend", "Stormglass")
 	lat := c.Query("lat")
 	lng := c.Query("lng")
 	params := c.Query("params")
@@ -41,17 +42,20 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 	lngVal, lngErr := strconv.ParseFloat(lng, 64)
 
 	if lat == "" || lng == "" || latErr != nil || lngErr != nil {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "lat and lng must be valid numbers"})
 		return
 	}
 
 	if !util.IsValidCoordinate(latVal) || !util.IsValidCoordinate(lngVal) {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
 		return
 	}
 
 	source := c.DefaultQuery("source", "noaa")
 	if source != "noaa" {
+		c.Set("error_type", "Unsupported Source")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Only 'noaa' source is supported so far"})
 		return
 	}
@@ -66,6 +70,7 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 	}
 
 	if len(filteredParams) == 0 {
+		c.Set("error_type", "No Valid Params")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid parameters requested"})
 		return
 	}
@@ -94,6 +99,7 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		c.Set("error_type", "Stormglass Connection Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
 		return
 	}
@@ -103,6 +109,13 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 	util.LogStormglass(h.debug, "GET", url, body)
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+			c.Set("error_type", "Stormglass Auth Error")
+		} else if resp.StatusCode == http.StatusTooManyRequests {
+			c.Set("error_type", "Stormglass Rate Limit")
+		} else {
+			c.Set("error_type", fmt.Sprintf("Stormglass HTTP %d", resp.StatusCode))
+		}
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -138,6 +151,7 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(body, &raw); err != nil {
+		c.Set("error_type", "Parse Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
 		return
 	}
@@ -205,6 +219,7 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Router /v2/tide/extremes/point [get]
 func (h *Handler) HandleTides(c *gin.Context) {
+	c.Set("backend", "Stormglass")
 	lat := c.Query("lat")
 	lng := c.Query("lng")
 	start := c.Query("start")
@@ -215,11 +230,13 @@ func (h *Handler) HandleTides(c *gin.Context) {
 	lngVal, lngErr := strconv.ParseFloat(lng, 64)
 
 	if lat == "" || lng == "" || latErr != nil || lngErr != nil {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "lat and lng must be valid numbers"})
 		return
 	}
 
 	if !util.IsValidCoordinate(latVal) || !util.IsValidCoordinate(lngVal) {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
 		return
 	}
@@ -249,6 +266,7 @@ func (h *Handler) HandleTides(c *gin.Context) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		c.Set("error_type", "Stormglass Connection Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
 		return
 	}
@@ -258,6 +276,13 @@ func (h *Handler) HandleTides(c *gin.Context) {
 	util.LogStormglass(h.debug, "GET", url, body)
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+			c.Set("error_type", "Stormglass Auth Error")
+		} else if resp.StatusCode == http.StatusTooManyRequests {
+			c.Set("error_type", "Stormglass Rate Limit")
+		} else {
+			c.Set("error_type", fmt.Sprintf("Stormglass HTTP %d", resp.StatusCode))
+		}
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -271,6 +296,7 @@ func (h *Handler) HandleTides(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(body, &raw); err != nil {
+		c.Set("error_type", "Parse Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
 		return
 	}
@@ -310,6 +336,7 @@ func (h *Handler) HandleTides(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Router /v2/tide/sea-level/point [get]
 func (h *Handler) HandleSeaLevel(c *gin.Context) {
+	c.Set("backend", "Stormglass")
 	lat := c.Query("lat")
 	lng := c.Query("lng")
 	start := c.Query("start")
@@ -320,11 +347,13 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 	lngVal, lngErr := strconv.ParseFloat(lng, 64)
 
 	if lat == "" || lng == "" || latErr != nil || lngErr != nil {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "lat and lng must be valid numbers"})
 		return
 	}
 
 	if !util.IsValidCoordinate(latVal) || !util.IsValidCoordinate(lngVal) {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
 		return
 	}
@@ -354,6 +383,7 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		c.Set("error_type", "Stormglass Connection Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
 		return
 	}
@@ -363,6 +393,13 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 	util.LogStormglass(h.debug, "GET", url, body)
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+			c.Set("error_type", "Stormglass Auth Error")
+		} else if resp.StatusCode == http.StatusTooManyRequests {
+			c.Set("error_type", "Stormglass Rate Limit")
+		} else {
+			c.Set("error_type", fmt.Sprintf("Stormglass HTTP %d", resp.StatusCode))
+		}
 		c.Data(resp.StatusCode, "application/json", body)
 		return
 	}
@@ -375,6 +412,7 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 	}
 
 	if err := json.Unmarshal(body, &raw); err != nil {
+		c.Set("error_type", "Parse Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Stormglass response"})
 		return
 	}

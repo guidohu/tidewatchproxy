@@ -156,8 +156,9 @@ The proxy also supports endpoints that use the [OpenWaters.io](https://openwater
 The proxy includes built-in OpenAPI documentation. You can explore and test the API endpoints using the Swagger UI.
 - **URL**: `http://localhost:8080/swagger/index.html`
 
-### GPS Dashboard
-A map-based dashboard is available to visualize the locations from which requests are being made. Coordinates are aggregated to a ~1km resolution for privacy.
+### GPS & Metrics Dashboard
+An interactive dashboard is available to visualize request patterns and monitor proxy health.
+- **Visualizations**: Map of requested locations (aggregated to ~1km), backend success/failure rates, and top reasons for failed requests.
 - **URL**: `http://localhost:8080/dashboard`
 
 ## Environment Variables
