@@ -1,0 +1,382 @@
+basePath: /
+definitions:
+  models.DenseTideData:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.DenseTidePoint'
+        type: array
+    type: object
+  models.DenseTidePoint:
+    properties:
+      h:
+        type: number
+      t:
+        type: string
+      ts:
+        type: integer
+    type: object
+  models.DenseWeatherData:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.DenseWeatherPoint'
+        type: array
+    type: object
+  models.DenseWeatherPoint:
+    properties:
+      d1:
+        type: number
+      d2:
+        type: number
+      h1:
+        type: number
+      h2:
+        type: number
+      p1:
+        type: number
+      p2:
+        type: number
+      ts:
+        type: integer
+      wd:
+        type: number
+      ws:
+        type: number
+    type: object
+  models.LocationResponse:
+    properties:
+      city:
+        type: string
+      countryCode:
+        type: string
+      countryName:
+        type: string
+      locality:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Proxy server for the Tide Watch Garmin application, providing weather,
+    tides, and geocoding. If server runs with API key restriction, clients need to
+    provide an API key.
+  title: Tide Watch Proxy API
+  version: "1.0"
+paths:
+  /data/reverse-geocode-client:
+    get:
+      description: Get location name from latitude and longitude using BigDataCloud
+      parameters:
+      - description: Latitude
+        in: query
+        name: latitude
+        required: true
+        type: string
+      - description: Longitude
+        in: query
+        name: longitude
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.LocationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - AppIdAuth: []
+      summary: Reverse Geocode
+      tags:
+      - Geocoding
+  /tides/extremes:
+    get:
+      description: Fetch tide extremes (high/low) from OpenWaters API
+      parameters:
+      - description: Latitude
+        in: query
+        name: latitude
+        required: true
+        type: string
+      - description: Longitude
+        in: query
+        name: longitude
+        required: true
+        type: string
+      - description: Start time (Unix timestamp)
+        in: query
+        name: start
+        type: string
+      - description: End time (Unix timestamp)
+        in: query
+        name: end
+        type: string
+      - description: Datum (LAT, MSL, MLLW)
+        in: query
+        name: datum
+        type: string
+      - description: 'Units (default: meters)'
+        in: query
+        name: units
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.DenseTideData'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - AppIdAuth: []
+      summary: Get Tide Extremes (OpenWaters)
+      tags:
+      - OpenWaters
+  /tides/timeline:
+    get:
+      description: Fetch tide timeline data from OpenWaters API
+      parameters:
+      - description: Latitude
+        in: query
+        name: latitude
+        required: true
+        type: string
+      - description: Longitude
+        in: query
+        name: longitude
+        required: true
+        type: string
+      - description: Start time (Unix timestamp)
+        in: query
+        name: start
+        type: string
+      - description: End time (Unix timestamp)
+        in: query
+        name: end
+        type: string
+      - description: Datum (LAT, MSL, MLLW)
+        in: query
+        name: datum
+        type: string
+      - description: 'Units (default: meters)'
+        in: query
+        name: units
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.DenseTideData'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - AppIdAuth: []
+      summary: Get Tide Timeline (OpenWaters)
+      tags:
+      - OpenWaters
+  /v2/tide/extremes/point:
+    get:
+      description: Fetch tide extremes from Stormglass API
+      parameters:
+      - description: Latitude
+        in: query
+        name: lat
+        required: true
+        type: string
+      - description: Longitude
+        in: query
+        name: lng
+        required: true
+        type: string
+      - description: Start time (Unix timestamp)
+        in: query
+        name: start
+        type: string
+      - description: End time (Unix timestamp)
+        in: query
+        name: end
+        type: string
+      - description: Datum
+        in: query
+        name: datum
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.DenseTideData'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - AppIdAuth: []
+      - ApiKeyAuth: []
+      summary: Get Tide Extremes (Stormglass)
+      tags:
+      - Stormglass
+  /v2/tide/sea-level/point:
+    get:
+      description: Fetch sea level timeline from Stormglass API
+      parameters:
+      - description: Latitude
+        in: query
+        name: lat
+        required: true
+        type: string
+      - description: Longitude
+        in: query
+        name: lng
+        required: true
+        type: string
+      - description: Start time (Unix timestamp)
+        in: query
+        name: start
+        type: string
+      - description: End time (Unix timestamp)
+        in: query
+        name: end
+        type: string
+      - description: Datum
+        in: query
+        name: datum
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.DenseTideData'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - AppIdAuth: []
+      - ApiKeyAuth: []
+      summary: Get Sea Level (Stormglass)
+      tags:
+      - Stormglass
+  /v2/weather/point:
+    get:
+      description: Fetch weather/swell/wind data from Stormglass API
+      parameters:
+      - description: Latitude
+        in: query
+        name: lat
+        required: true
+        type: string
+      - description: Longitude
+        in: query
+        name: lng
+        required: true
+        type: string
+      - description: Comma-separated parameters
+        in: query
+        name: params
+        required: true
+        type: string
+      - description: Start time (Unix timestamp)
+        in: query
+        name: start
+        type: string
+      - description: End time (Unix timestamp)
+        in: query
+        name: end
+        type: string
+      - description: 'Source (default: noaa)'
+        in: query
+        name: source
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.DenseWeatherData'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - AppIdAuth: []
+      - ApiKeyAuth: []
+      summary: Get Weather Data
+      tags:
+      - Stormglass
+securityDefinitions:
+  ApiKeyAuth:
+    description: Stormglass API Key for weather and some tide endpoints.
+    in: header
+    name: Authorization
+    type: apiKey
+  AppIdAuth:
+    description: Allowed App ID for accessing the API.
+    in: header
+    name: X-App-Id
+    type: apiKey
+swagger: "2.0"

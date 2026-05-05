@@ -1,0 +1,586 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Proxy server for the Tide Watch Garmin application, providing weather, tides, and geocoding. If server runs with API key restriction, clients need to provide an API key.",
+        "title": "Tide Watch Proxy API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/",
+    "paths": {
+        "/data/reverse-geocode-client": {
+            "get": {
+                "security": [
+                    {
+                        "AppIdAuth": []
+                    }
+                ],
+                "description": "Get location name from latitude and longitude using BigDataCloud",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Geocoding"
+                ],
+                "summary": "Reverse Geocode",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Latitude",
+                        "name": "latitude",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Longitude",
+                        "name": "longitude",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.LocationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tides/extremes": {
+            "get": {
+                "security": [
+                    {
+                        "AppIdAuth": []
+                    }
+                ],
+                "description": "Fetch tide extremes (high/low) from OpenWaters API",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OpenWaters"
+                ],
+                "summary": "Get Tide Extremes (OpenWaters)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Latitude",
+                        "name": "latitude",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Longitude",
+                        "name": "longitude",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (Unix timestamp)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (Unix timestamp)",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Datum (LAT, MSL, MLLW)",
+                        "name": "datum",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Units (default: meters)",
+                        "name": "units",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.DenseTideData"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tides/timeline": {
+            "get": {
+                "security": [
+                    {
+                        "AppIdAuth": []
+                    }
+                ],
+                "description": "Fetch tide timeline data from OpenWaters API",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OpenWaters"
+                ],
+                "summary": "Get Tide Timeline (OpenWaters)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Latitude",
+                        "name": "latitude",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Longitude",
+                        "name": "longitude",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (Unix timestamp)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (Unix timestamp)",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Datum (LAT, MSL, MLLW)",
+                        "name": "datum",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Units (default: meters)",
+                        "name": "units",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.DenseTideData"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v2/tide/extremes/point": {
+            "get": {
+                "security": [
+                    {
+                        "AppIdAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Fetch tide extremes from Stormglass API",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Stormglass"
+                ],
+                "summary": "Get Tide Extremes (Stormglass)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Latitude",
+                        "name": "lat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Longitude",
+                        "name": "lng",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (Unix timestamp)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (Unix timestamp)",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Datum",
+                        "name": "datum",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.DenseTideData"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v2/tide/sea-level/point": {
+            "get": {
+                "security": [
+                    {
+                        "AppIdAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Fetch sea level timeline from Stormglass API",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Stormglass"
+                ],
+                "summary": "Get Sea Level (Stormglass)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Latitude",
+                        "name": "lat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Longitude",
+                        "name": "lng",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (Unix timestamp)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (Unix timestamp)",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Datum",
+                        "name": "datum",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.DenseTideData"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v2/weather/point": {
+            "get": {
+                "security": [
+                    {
+                        "AppIdAuth": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Fetch weather/swell/wind data from Stormglass API",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Stormglass"
+                ],
+                "summary": "Get Weather Data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Latitude",
+                        "name": "lat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Longitude",
+                        "name": "lng",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated parameters",
+                        "name": "params",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (Unix timestamp)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (Unix timestamp)",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Source (default: noaa)",
+                        "name": "source",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.DenseWeatherData"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "models.DenseTideData": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.DenseTidePoint"
+                    }
+                }
+            }
+        },
+        "models.DenseTidePoint": {
+            "type": "object",
+            "properties": {
+                "h": {
+                    "type": "number"
+                },
+                "t": {
+                    "type": "string"
+                },
+                "ts": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.DenseWeatherData": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.DenseWeatherPoint"
+                    }
+                }
+            }
+        },
+        "models.DenseWeatherPoint": {
+            "type": "object",
+            "properties": {
+                "d1": {
+                    "type": "number"
+                },
+                "d2": {
+                    "type": "number"
+                },
+                "h1": {
+                    "type": "number"
+                },
+                "h2": {
+                    "type": "number"
+                },
+                "p1": {
+                    "type": "number"
+                },
+                "p2": {
+                    "type": "number"
+                },
+                "ts": {
+                    "type": "integer"
+                },
+                "wd": {
+                    "type": "number"
+                },
+                "ws": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.LocationResponse": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "countryCode": {
+                    "type": "string"
+                },
+                "countryName": {
+                    "type": "string"
+                },
+                "locality": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "description": "Stormglass API Key for weather and some tide endpoints.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "AppIdAuth": {
+            "description": "Allowed App ID for accessing the API.",
+            "type": "apiKey",
+            "name": "X-App-Id",
+            "in": "header"
+        }
+    }
+}
