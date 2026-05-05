@@ -11,12 +11,24 @@ func LocationLogger(s *store.LocationStore) gin.HandlerFunc {
 		// Proceed with the request
 		c.Next()
 
-		// Skip tracking if the request failed or returned error
-		if c.Writer.Status() >= 400 {
-			return
+		status := c.Writer.Status()
+		backend, _ := c.Get("backend")
+		backendStr, ok := backend.(string)
+		if !ok {
+			backendStr = "Unknown"
 		}
 
-		// Try to extract latitude and longitude
+		errorType := ""
+		if status >= 400 {
+			// Try to get error type from context if set by handler
+			if e, exists := c.Get("error_type"); exists {
+				errorType = e.(string)
+			} else {
+				errorType = "Unknown Error"
+			}
+		}
+
+		// Try to extract latitude and longitude for the map
 		latStr := c.Query("lat")
 		if latStr == "" {
 			latStr = c.Query("latitude")
@@ -27,12 +39,18 @@ func LocationLogger(s *store.LocationStore) gin.HandlerFunc {
 			lngStr = c.Query("longitude")
 		}
 
+		var lat, lng float64
 		if latStr != "" && lngStr != "" {
-			lat := util.MustParseFloat(latStr)
-			lng := util.MustParseFloat(lngStr)
+			lat = util.MustParseFloat(latStr)
+			lng = util.MustParseFloat(lngStr)
+		}
 
+		// Log request metrics (including coordinates if available)
+		go s.LogRequest(backendStr, status, errorType, lat, lng)
+
+		// Update aggregated location count only for successful requests
+		if status < 400 && lat != 0 && lng != 0 {
 			if util.IsValidCoordinate(lat) && util.IsValidCoordinate(lng) {
-				// Run in a goroutine so it doesn't block the response
 				go s.LogLocation(lat, lng)
 			}
 		}

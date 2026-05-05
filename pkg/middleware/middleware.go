@@ -22,6 +22,7 @@ func AppIDMiddleware(allowedAppIDs []string) gin.HandlerFunc {
 				}
 			}
 			if !allowed {
+				c.Set("error_type", "Unauthorized App ID")
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or missing App ID"})
 				return
 			}
@@ -42,6 +43,7 @@ func AuthMiddleware(stormglassAPIKey string) gin.HandlerFunc {
 		}
 
 		if key == "" {
+			c.Set("error_type", "Missing API Key")
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "No API key provided"})
 			return
 		}

@@ -23,10 +23,12 @@ import (
 // @Security AppIdAuth
 // @Router /data/reverse-geocode-client [get]
 func (h *Handler) HandleReverseGeocode(c *gin.Context) {
+	c.Set("backend", "BigDataCloud")
 	latStr := c.Query("latitude")
 	lngStr := c.Query("longitude")
 
 	if latStr == "" || lngStr == "" {
+		c.Set("error_type", "Invalid Coordinates")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude are required"})
 		return
 	}
@@ -59,10 +61,17 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 
 	resp, err := http.Get(url)
 	if err != nil {
+		c.Set("error_type", "BigDataCloud Connection Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from BigDataCloud"})
 		return
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.Set("error_type", fmt.Sprintf("BigDataCloud HTTP %d", resp.StatusCode))
+		c.JSON(resp.StatusCode, gin.H{"error": "BigDataCloud returned error"})
+		return
+	}
 
 	var raw struct {
 		Locality    string `json:"locality"`
@@ -72,6 +81,7 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		c.Set("error_type", "Parse Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse BigDataCloud response"})
 		return
 	}
