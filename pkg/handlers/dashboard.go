@@ -282,7 +282,7 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                             fillColor: '#3b82f6',
                             fillOpacity: 0.5,
                             radius: radius
-                        }).addTo(map).bindPopup("Requests: " + loc.count);
+                        }).addTo(map).bindPopup("<b>Lat:</b> " + loc.lat + "<br><b>Lng:</b> " + loc.lng + "<br><b>Requests:</b> " + loc.count);
                         markers.push(m);
                     });
                 });
