@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
 	"strconv"
 	"strings"
 
@@ -87,6 +88,11 @@ func main() {
 	}
 
 	log.Printf("Starting Tide Watch Proxy...")
+	if currentUser, err := user.Current(); err == nil {
+		log.Printf("Running as User: %s (UID: %s)", currentUser.Username, currentUser.Uid)
+	} else {
+		log.Printf("Running as User: unknown (Error: %v)", err)
+	}
 	log.Printf("Port: %s", port)
 	log.Printf("Redis Address: %s", redisAddr)
 	log.Printf("Stormglass API Key: %s", stormglassAPIKey)
