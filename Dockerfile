@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy go.mod and go.sum and download dependencies
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 # Copy the source code
 COPY . .
@@ -19,8 +19,8 @@ FROM alpine:latest
 # Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates
 
-# Create a non-root user and group
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Create a non-root user and group with ID 1003
+RUN addgroup -g 1003 -S tidewatchproxy && adduser -u 1003 -S tidewatchproxy -G tidewatchproxy
 
 WORKDIR /app
 
@@ -28,10 +28,10 @@ WORKDIR /app
 COPY --from=builder /app/proxy .
 
 # Setup directory structure and permissions
-RUN mkdir -p /app/database && chown -R appuser:appgroup /app
+RUN mkdir -p /app/database && chown -R tidewatchproxy:tidewatchproxy /app
 
 # Switch to the non-root user
-USER appuser
+USER tidewatchproxy
 
 # Expose the port the app runs on
 EXPOSE 8080
