@@ -1,0 +1,7 @@
+.git
+.antigravity
+scratch
+dist
+bin
+*.db
+*.log

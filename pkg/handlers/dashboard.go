@@ -72,7 +72,10 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { 
@@ -254,7 +257,7 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
 
     <script>
         let failureChart;
-        let markers = [];
+        let markerCluster;
 
         // Map Initialization
         var map = L.map('map').setView([20, 0], 2);
@@ -263,12 +266,18 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
 
+        markerCluster = L.markerClusterGroup({
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true,
+            spiderfyOnMaxZoom: true
+        });
+        map.addLayer(markerCluster);
+
         function updateDashboard() {
             const days = document.getElementById('timeframe').value;
             
             // Clear markers
-            markers.forEach(m => map.removeLayer(m));
-            markers = [];
+            markerCluster.clearLayers();
 
             // Fetch Locations
             fetch('/dashboard/api/locations?days=' + days)
@@ -276,14 +285,13 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                 .then(data => {
                     if (!data) return;
                     data.forEach(loc => {
-                        var radius = Math.max(5, Math.min(20, loc.count));
                         var m = L.circleMarker([loc.lat, loc.lng], {
                             color: '#3b82f6',
                             fillColor: '#3b82f6',
                             fillOpacity: 0.5,
-                            radius: radius
-                        }).addTo(map).bindPopup("<b>Lat:</b> " + loc.lat + "<br><b>Lng:</b> " + loc.lng + "<br><b>Requests:</b> " + loc.count);
-                        markers.push(m);
+                            radius: 8
+                        }).bindPopup("<b>Lat:</b> " + loc.lat + "<br><b>Lng:</b> " + loc.lng + "<br><b>Requests:</b> " + loc.count);
+                        markerCluster.addLayer(m);
                     });
                 });
 
