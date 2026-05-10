@@ -55,6 +55,7 @@ func main() {
 	// Flags with environment variables as defaults
 	var (
 		apiKeyFlag          = flag.String("stormglass-api-key", os.Getenv("STORMGLASS_API_KEY"), "Stormglass API key")
+		bigDataCloudKeyFlag = flag.String("bigdatacloud-api-key", os.Getenv("BIGDATACLOUD_API_KEY"), "BigDataCloud API key")
 		redisAddrFlag       = flag.String("redis-addr", getEnv("REDIS_ADDR", "redis:6379"), "Redis address")
 		portFlag            = flag.String("port", getEnv("PORT", "8080"), "Port to listen on")
 		customLocationsFlag = flag.String("custom-locations", "custom_locations.csv", "Path to custom locations CSV file")
@@ -70,6 +71,7 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables (used as defaults for flags):\n")
 		fmt.Fprintf(os.Stderr, "  STORMGLASS_API_KEY  Fallback Stormglass API key\n")
+		fmt.Fprintf(os.Stderr, "  BIGDATACLOUD_API_KEY BigDataCloud API key\n")
 		fmt.Fprintf(os.Stderr, "  REDIS_ADDR          Redis address\n")
 		fmt.Fprintf(os.Stderr, "  PORT                Port to listen on\n")
 		fmt.Fprintf(os.Stderr, "  ALLOWED_APP_IDS     Comma separated list of allowed App IDs or API keys\n")
@@ -80,6 +82,7 @@ func main() {
 
 	// Assign flag values
 	stormglassAPIKey = *apiKeyFlag
+	bigDataCloudAPIKey := *bigDataCloudKeyFlag
 	redisAddr := *redisAddrFlag
 	port := *portFlag
 	if *allowedAppIDsFlag != "" {
@@ -98,6 +101,7 @@ func main() {
 	log.Printf("Port: %s", port)
 	log.Printf("Redis Address: %s", redisAddr)
 	log.Printf("Stormglass API Key: %s", stormglassAPIKey)
+	log.Printf("BigDataCloud API Key: %s", bigDataCloudAPIKey)
 	log.Printf("Allowed App IDs: %v", allowedAppIDs)
 	log.Printf("Custom Locations File: %s", *customLocationsFlag)
 	log.Printf("SQLite DB Path: %s", *dbPathFlag)
@@ -126,7 +130,7 @@ func main() {
 	}
 
 	// Initialize Handler
-	h := handlers.NewHandler(redisClient, stormglassAPIKey, useCache, customLocations, debug)
+	h := handlers.NewHandler(redisClient, stormglassAPIKey, bigDataCloudAPIKey, useCache, customLocations, debug)
 	dashboardHandler := handlers.NewDashboardHandler(locationStore)
 
 	r := gin.Default()
@@ -140,7 +144,9 @@ func main() {
 		api.GET("/v2/tide/sea-level/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleSeaLevel)
 		api.GET("/tides/extremes", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersExtremes)
 		api.GET("/tides/timeline", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersTimeline)
+		// -client is deprecated but still used by clients.
 		api.GET("/data/reverse-geocode-client", middleware.AppIDMiddleware(allowedAppIDs), h.HandleReverseGeocode)
+		api.GET("/data/reverse-geocode", middleware.AppIDMiddleware(allowedAppIDs), h.HandleReverseGeocode)
 	}
 
 	// Dashboard routes (no logging)

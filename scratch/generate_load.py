@@ -9,7 +9,7 @@ NUM_REQUESTS = 100
 ENDPOINTS = [
     "/tides/extremes",
     "/tides/timeline",
-    "/data/reverse-geocode-client"
+    "/data/reverse-geocode"
 ]
 
 def generate_random_coords():

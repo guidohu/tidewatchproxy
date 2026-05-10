@@ -7,9 +7,10 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"tide_watch_proxy/pkg/models"
 	"tide_watch_proxy/pkg/util"
+
+	"github.com/gin-gonic/gin"
 )
 
 // @Summary Reverse Geocode
@@ -22,7 +23,7 @@ import (
 // @Failure 400 {object} map[string]string "Bad Request"
 // @Failure 500 {object} map[string]string "Internal Server Error"
 // @Security AppIdAuth
-// @Router /data/reverse-geocode-client [get]
+// @Router /data/reverse-geocode [get]
 func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 	c.Set("backend", "BigDataCloud")
 	latStr := c.Query("latitude")
@@ -57,8 +58,8 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 	}
 
 	// Fetch from BigDataCloud
-	url := fmt.Sprintf("%s/data/reverse-geocode-client?latitude=%s&longitude=%s&localityLanguage=en",
-		BigDataCloudBaseURL, latStr, lngStr)
+	url := fmt.Sprintf("%s/data/reverse-geocode?latitude=%s&longitude=%s&localityLanguage=en&key=%s",
+		BigDataCloudBaseURL, latStr, lngStr, h.bigDataCloudAPIKey)
 
 	resp, err := http.Get(url)
 	if err != nil {
