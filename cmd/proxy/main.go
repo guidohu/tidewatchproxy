@@ -50,6 +50,8 @@ var (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Printf("Tide Watch Proxy main() started...")
 	// Flags with environment variables as defaults
 	var (
 		apiKeyFlag          = flag.String("stormglass-api-key", os.Getenv("STORMGLASS_API_KEY"), "Stormglass API key")

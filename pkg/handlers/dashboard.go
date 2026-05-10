@@ -100,22 +100,24 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
             margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
         }
         #map { height: 500px; border-radius: 12px; width: 100%; }
         .bottom-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
             gap: 20px;
         }
         h1 { margin: 0; font-size: 1.5rem; color: #1e293b; }
         h2 { margin-top: 0; color: #64748b; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        .chart-container { position: relative; height: 250px; }
+        .chart-container { position: relative; height: 250px; flex-grow: 1; }
         
         .stats-widget {
             display: flex;
             align-items: center;
             justify-content: space-around;
-            height: 100%;
+            flex-grow: 1;
             min-height: 200px;
         }
         .stat-item {
@@ -227,9 +229,27 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                     </div>
                     <div class="stat-item">
                         <div class="stat-value total" id="totalValue">0</div>
-                        <div class="stat-label">Total</div>
+                        <div class="stat-label">Total Requests</div>
                     </div>
                 </div>
+            </div>
+            <div class="card">
+                <h2>Location Overview</h2>
+                <div style="display: flex; flex-direction: column; align-items: center; padding: 10px 0 20px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px;">
+                    <div class="stat-value total" id="locationTotalValue" style="font-size: 2.5rem; font-weight: 800; color: #1e293b;">0</div>
+                    <div class="stat-label" style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Total Distinct Locations</div>
+                </div>
+                <table class="error-table" style="margin-top: 0;">
+                    <thead>
+                        <tr>
+                            <th>Backend</th>
+                            <th style="text-align: right;">Distinct Locations</th>
+                        </tr>
+                    </thead>
+                    <tbody id="locationStatsBody">
+                        <tr><td colspan="2" style="text-align:center">No data available</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -284,6 +304,7 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                 .then(res => res.json())
                 .then(data => {
                     if (!data) return;
+                    document.getElementById('locationTotalValue').innerText = data.length.toLocaleString();
                     data.forEach(loc => {
                         var m = L.circleMarker([loc.lat, loc.lng], {
                             color: '#3b82f6',
@@ -307,6 +328,18 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                     document.getElementById('totalValue').innerText = total.toLocaleString();
                     document.getElementById('successValue').innerText = success.toLocaleString();
                     document.getElementById('failedValue').innerText = failed.toLocaleString();
+
+                    const locBody = document.getElementById('locationStatsBody');
+                    if (data.length === 0) {
+                        locBody.innerHTML = '<tr><td colspan="2" style="text-align:center">No data available</td></tr>';
+                    } else {
+                        locBody.innerHTML = data.map(st => 
+                            '<tr>' +
+                                '<td>' + st.backend + '</td>' +
+                                '<td style="text-align: right; font-weight: 600;">' + st.locations.toLocaleString() + '</td>' +
+                            '</tr>'
+                        ).join('');
+                    }
                 });
 
             // Fetch Failure Reasons
