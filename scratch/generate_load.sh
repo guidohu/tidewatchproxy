@@ -2,13 +2,13 @@
 
 BASE_URL="http://localhost:8080"
 APP_ID="myappid"
-NUM_REQUESTS=1000
+NUM_REQUESTS=1
 CONCURRENCY=10
 
 ENDPOINTS=(
     "/tides/extremes"
     "/tides/timeline"
-    "/data/reverse-geocode-client"
+	"/data/reverse-geocode"
 )
 
 echo "Starting optimized load generation: $NUM_REQUESTS requests with concurrency $CONCURRENCY..."

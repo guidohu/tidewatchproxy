@@ -111,12 +111,12 @@ curl "http://localhost:8080/v2/tide/sea-level/point?lat=21.27&lng=-157.82&start=
 ```
 
 ### Reverse Geocode
-`GET /data/reverse-geocode-client?latitude=...&longitude=...`
+`GET /data/reverse-geocode?latitude=...&longitude=...`
 - Returns local name/city. Checks `custom_locations.csv` first.
 
 **Example Request**:
 ```bash
-curl "http://localhost:8080/data/reverse-geocode-client?latitude=21.27&longitude=-157.82"
+curl "http://localhost:8080/data/reverse-geocode?latitude=21.27&longitude=-157.82"
 ```
 
 **Example Response**:
@@ -164,6 +164,7 @@ An interactive dashboard is available to visualize request patterns and monitor 
 ## Environment Variables
 
 - `STORMGLASS_API_KEY`: Your Stormglass.io API key (used for `/v2/` endpoints). **Not required** for OpenWaters or Geocoding endpoints.
+- `BIGDATACLOUD_API_KEY`: Your BigDataCloud API key (used for reverse geocoding).
 - `REDIS_ADDR`: Address of the Redis instance (default: `redis:6379`).
 - `PORT`: Port to listen on (default: `8080`).
 - `ALLOWED_APP_IDS`: Restrict proxy access to a comma-separated list of App IDs (applies to all endpoints).

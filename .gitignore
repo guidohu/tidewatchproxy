@@ -36,3 +36,6 @@ tide_watch_proxy
 
 # Antigravity Skills
 .antigravity/
+
+# Specific testing files
+docker-compose-testing.yml
