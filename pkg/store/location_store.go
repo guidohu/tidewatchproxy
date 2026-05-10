@@ -21,9 +21,10 @@ type LocationStats struct {
 }
 
 type BackendStats struct {
-	Backend string `json:"backend"`
-	Success int    `json:"success"`
-	Failed  int    `json:"failed"`
+	Backend   string `json:"backend"`
+	Success   int    `json:"success"`
+	Failed    int    `json:"failed"`
+	Locations int    `json:"locations"`
 }
 
 type FailureReason struct {
@@ -34,17 +35,16 @@ type FailureReason struct {
 func NewLocationStore(dbPath string) (*LocationStore, error) {
 	// Add busy timeout to handle concurrent writes
 	dsn := fmt.Sprintf("%s?_busy_timeout=5000", dbPath)
+	log.Printf("Opening SQLite database at %s...", dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// For SQLite, a single connection is often better to avoid "database is locked" errors,
-	// especially when multiple goroutines are performing writes.
+	// For SQLite, a single connection is often better to avoid "database is locked" errors
 	db.SetMaxOpenConns(1)
 
-	// Enable WAL mode for better concurrency
-	_, _ = db.Exec("PRAGMA journal_mode=WAL")
+	log.Printf("Connected to database. Initializing tables...")
 
 	// Create tables if not exists
 	_, err = db.Exec(`
@@ -80,6 +80,7 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
+	log.Printf("Tables initialized. Running migrations...")
 
 	// Migrations: Add columns if they don't exist
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN timestamp DATETIME DEFAULT CURRENT_TIMESTAMP")
@@ -89,6 +90,8 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 
 	// Ensure existing rows have a timestamp if it was NULL
 	_, _ = db.Exec("UPDATE requests SET timestamp = CURRENT_TIMESTAMP WHERE timestamp IS NULL")
+
+	log.Printf("Database initialization complete.")
 
 	store := &LocationStore{db: db}
 
@@ -242,7 +245,8 @@ func (s *LocationStore) GetBackendStats(days int) ([]BackendStats, error) {
 		SELECT 
 			backend, 
 			SUM(CASE WHEN status_code < 400 THEN 1 ELSE 0 END) as success,
-			SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as failed
+			SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as failed,
+			COUNT(DISTINCT lat || ',' || lng) as locations
 		FROM requests`
 	var args []interface{}
 
@@ -262,7 +266,7 @@ func (s *LocationStore) GetBackendStats(days int) ([]BackendStats, error) {
 	var stats []BackendStats
 	for rows.Next() {
 		var st BackendStats
-		if err := rows.Scan(&st.Backend, &st.Success, &st.Failed); err != nil {
+		if err := rows.Scan(&st.Backend, &st.Success, &st.Failed, &st.Locations); err != nil {
 			return nil, err
 		}
 		stats = append(stats, st)
