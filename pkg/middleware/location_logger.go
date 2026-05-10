@@ -68,8 +68,8 @@ func LocationLogger(s *store.LocationStore) gin.HandlerFunc {
 				ErrorType:    errorType,
 			}
 
-			// Log to database
-			go s.LogError(errLog)
+			// Log to database (handled asynchronously by store)
+			s.LogError(errLog)
 
 			// Log to command line
 			log.Printf("[ERROR] %s %s | Status: %d | Backend: %s | Error: %s", 
@@ -100,13 +100,13 @@ func LocationLogger(s *store.LocationStore) gin.HandlerFunc {
 			lng = util.MustParseFloat(lngStr)
 		}
 
-		// Log request metrics (including coordinates if available)
-		go s.LogRequest(backendStr, status, errorType, lat, lng)
+		// Log request metrics (including coordinates if available, handled asynchronously by store)
+		s.LogRequest(backendStr, status, errorType, lat, lng)
 
 		// Update aggregated location count only for successful requests
 		if status < 400 && lat != 0 && lng != 0 {
 			if util.IsValidCoordinate(lat) && util.IsValidCoordinate(lng) {
-				go s.LogLocation(lat, lng)
+				s.LogLocation(lat, lng)
 			}
 		}
 	}

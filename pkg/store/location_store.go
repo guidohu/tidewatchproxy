@@ -11,7 +11,29 @@ import (
 )
 
 type LocationStore struct {
-	db *sql.DB
+	db           *sql.DB
+	requestChan  chan requestEntry
+	locationChan chan locationEntry
+	errorChan    chan ErrorLog
+	stopChan     chan struct{}
+
+	// Prepared statements
+	stmtRequest  *sql.Stmt
+	stmtLocation *sql.Stmt
+	stmtError    *sql.Stmt
+}
+
+type requestEntry struct {
+	backend    string
+	statusCode int
+	errorType  string
+	lat        float64
+	lng        float64
+}
+
+type locationEntry struct {
+	lat float64
+	lng float64
 }
 
 type LocationStats struct {
@@ -55,6 +77,9 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
 	}
+	_, _ = db.Exec("PRAGMA cache_size=-64000") // 64MB cache
+	_, _ = db.Exec("PRAGMA temp_store=MEMORY")
+	_, _ = db.Exec("PRAGMA mmap_size=268435456") // 256MB mmap
 
 	log.Printf("Connected to database (WAL mode enabled). Initializing tables...")
 
@@ -111,13 +136,153 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 
 	log.Printf("Database initialization complete.")
 
-	store := &LocationStore{db: db}
+	// Prepare statements
+	stmtRequest, err := db.Prepare(`
+		INSERT INTO requests (backend, status_code, error_type, lat, lng)
+		VALUES (?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare request statement: %w", err)
+	}
+
+	stmtLocation, err := db.Prepare(`
+		INSERT INTO locations (lat, lng, count)
+		VALUES (?, ?, 1)
+		ON CONFLICT(lat, lng) DO UPDATE SET count = count + 1
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare location statement: %w", err)
+	}
+
+	stmtError, err := db.Prepare(`
+		INSERT INTO error_logs (method, path, query, status_code, request_body, response_body, upstream_response, backend, error_type)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare error statement: %w", err)
+	}
+
+	store := &LocationStore{
+		db:           db,
+		requestChan:  make(chan requestEntry, 1000),
+		locationChan: make(chan locationEntry, 1000),
+		errorChan:    make(chan ErrorLog, 100),
+		stopChan:     make(chan struct{}),
+		stmtRequest:  stmtRequest,
+		stmtLocation: stmtLocation,
+		stmtError:    stmtError,
+	}
+
+	// Start background worker
+	go store.runWorker()
 
 	// Start background cleanup
 	go store.startCleanupTask()
 
 	return store, nil
 }
+
+func (s *LocationStore) Close() error {
+	close(s.stopChan)
+	s.stmtRequest.Close()
+	s.stmtLocation.Close()
+	s.stmtError.Close()
+	return s.db.Close()
+}
+
+func (s *LocationStore) runWorker() {
+	var (
+		requests  []requestEntry
+		locations []locationEntry
+		errors    []ErrorLog
+	)
+
+	flush := func() {
+		if len(requests) == 0 && len(locations) == 0 && len(errors) == 0 {
+			return
+		}
+
+		start := time.Now()
+		tx, err := s.db.Begin()
+		if err != nil {
+			log.Printf("Error starting transaction: %v", err)
+			return
+		}
+
+		if len(requests) > 0 {
+			txStmt := tx.Stmt(s.stmtRequest)
+			for _, req := range requests {
+				var latVal, lngVal interface{}
+				if req.lat != 0 || req.lng != 0 {
+					latVal = util.Round(req.lat, 2)
+					lngVal = util.Round(req.lng, 2)
+				}
+				txStmt.Exec(req.backend, req.statusCode, req.errorType, latVal, lngVal)
+			}
+		}
+
+		if len(locations) > 0 {
+			txStmt := tx.Stmt(s.stmtLocation)
+			for _, loc := range locations {
+				qLat := util.Round(loc.lat, 2)
+				qLng := util.Round(loc.lng, 2)
+				txStmt.Exec(qLat, qLng)
+			}
+		}
+
+		if len(errors) > 0 {
+			txStmt := tx.Stmt(s.stmtError)
+			for _, entry := range errors {
+				txStmt.Exec(
+					entry.Method, entry.Path, entry.Query, entry.StatusCode,
+					entry.RequestBody, entry.ResponseBody, entry.UpstreamResponse,
+					entry.Backend, entry.ErrorType,
+				)
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			log.Printf("Error committing transaction: %v", err)
+		}
+
+		if len(requests)+len(locations)+len(errors) > 10 {
+			log.Printf("Flushed %d items to DB in %v", len(requests)+len(locations)+len(errors), time.Since(start))
+		}
+
+		requests = nil
+		locations = nil
+		errors = nil
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case req := <-s.requestChan:
+			requests = append(requests, req)
+			if len(requests) >= 200 {
+				flush()
+			}
+		case loc := <-s.locationChan:
+			locations = append(locations, loc)
+			if len(locations) >= 200 {
+				flush()
+			}
+		case err := <-s.errorChan:
+			errors = append(errors, err)
+			if len(errors) >= 50 {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		case <-s.stopChan:
+			flush()
+			return
+		}
+	}
+}
+
 
 func (s *LocationStore) startCleanupTask() {
 	// Run cleanup immediately on start
@@ -143,19 +308,10 @@ func (s *LocationStore) CleanupOldLogs() {
 }
 
 func (s *LocationStore) LogLocation(lat, lng float64) {
-	// Quantize to ~1.1km resolution (2 decimal places)
-	qLat := util.Round(lat, 2)
-	qLng := util.Round(lng, 2)
-
-	// Upsert
-	_, err := s.db.Exec(`
-		INSERT INTO locations (lat, lng, count)
-		VALUES (?, ?, 1)
-		ON CONFLICT(lat, lng) DO UPDATE SET count = count + 1
-	`, qLat, qLng)
-
-	if err != nil {
-		log.Printf("Error logging location: %v", err)
+	select {
+	case s.locationChan <- locationEntry{lat: lat, lng: lng}:
+	default:
+		log.Printf("Warning: locationChan full, dropping location log")
 	}
 }
 
@@ -190,18 +346,16 @@ func (s *LocationStore) GetAllLocations(days int) ([]LocationStats, error) {
 }
 
 func (s *LocationStore) LogRequest(backend string, statusCode int, errorType string, lat, lng float64) {
-	var latVal, lngVal interface{}
-	if lat != 0 || lng != 0 {
-		latVal = util.Round(lat, 2)
-		lngVal = util.Round(lng, 2)
-	}
-
-	_, err := s.db.Exec(`
-		INSERT INTO requests (backend, status_code, error_type, lat, lng)
-		VALUES (?, ?, ?, ?, ?)
-	`, backend, statusCode, errorType, latVal, lngVal)
-	if err != nil {
-		log.Printf("Error logging request: %v", err)
+	select {
+	case s.requestChan <- requestEntry{
+		backend:    backend,
+		statusCode: statusCode,
+		errorType:  errorType,
+		lat:        lat,
+		lng:        lng,
+	}:
+	default:
+		log.Printf("Warning: requestChan full, dropping request log")
 	}
 }
 
@@ -220,12 +374,10 @@ type ErrorLog struct {
 }
 
 func (s *LocationStore) LogError(entry ErrorLog) {
-	_, err := s.db.Exec(`
-		INSERT INTO error_logs (method, path, query, status_code, request_body, response_body, upstream_response, backend, error_type)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, entry.Method, entry.Path, entry.Query, entry.StatusCode, entry.RequestBody, entry.ResponseBody, entry.UpstreamResponse, entry.Backend, entry.ErrorType)
-	if err != nil {
-		log.Printf("Error saving error log: %v", err)
+	select {
+	case s.errorChan <- entry:
+	default:
+		log.Printf("Warning: errorChan full, dropping error log")
 	}
 }
 
