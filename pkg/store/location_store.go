@@ -41,10 +41,22 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// For SQLite, a single connection is often better to avoid "database is locked" errors
-	db.SetMaxOpenConns(1)
+	// For SQLite in WAL mode, we can allow multiple concurrent readers.
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(time.Hour)
 
-	log.Printf("Connected to database. Initializing tables...")
+	// Explicitly enable WAL mode and other performance settings
+	_, err = db.Exec("PRAGMA journal_mode=WAL")
+	if err != nil {
+		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
+	_, err = db.Exec("PRAGMA synchronous=NORMAL")
+	if err != nil {
+		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
+	}
+
+	log.Printf("Connected to database (WAL mode enabled). Initializing tables...")
 
 	// Create tables if not exists
 	_, err = db.Exec(`
@@ -76,9 +88,15 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 			backend TEXT,
 			error_type TEXT
 		);
+
+		-- Performance Indexes
+		CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
+		CREATE INDEX IF NOT EXISTS idx_requests_backend ON requests(backend);
+		CREATE INDEX IF NOT EXISTS idx_requests_lat_lng ON requests(lat, lng);
+		CREATE INDEX IF NOT EXISTS idx_error_logs_timestamp ON error_logs(timestamp);
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create tables: %w", err)
+		return nil, fmt.Errorf("failed to create tables and indexes: %w", err)
 	}
 	log.Printf("Tables initialized. Running migrations...")
 
