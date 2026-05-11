@@ -43,6 +43,7 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 	// Check CSV first - this always works, regardless of useCache flag
 	if name, ok := h.customLocations[key]; ok {
 		log.Printf("CSV Match: Found custom location '%s' for key %s", name, key)
+		c.Set("is_cache_hit", true)
 		c.JSON(http.StatusOK, models.LocationResponse{Locality: name})
 		return
 	}
@@ -54,6 +55,7 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 			c.Header("X-Cache", "HIT")
 			var cached models.LocationResponse
 			if err := json.Unmarshal([]byte(val), &cached); err == nil {
+				c.Set("is_cache_hit", true)
 				c.JSON(http.StatusOK, cached)
 				return
 			}
