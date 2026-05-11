@@ -487,7 +487,7 @@ func (s *LocationStore) GetUsageStats(days int) ([]UsageStats, error) {
 	var query string
 	var args []interface{}
 
-	if days <= 1 {
+	if days <= 1 && days != 0 {
 		// 24 hours, 5 minute buckets
 		query = `
 			SELECT 
@@ -497,7 +497,7 @@ func (s *LocationStore) GetUsageStats(days int) ([]UsageStats, error) {
 			WHERE timestamp >= datetime('now', '-24 hours')
 			GROUP BY bucket
 			ORDER BY bucket`
-	} else if days <= 7 {
+	} else if days <= 7 && days != 0 {
 		// 7 days, 1 hour buckets
 		query = `
 			SELECT 
