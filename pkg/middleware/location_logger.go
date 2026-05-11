@@ -100,8 +100,13 @@ func LocationLogger(s *store.LocationStore) gin.HandlerFunc {
 			lng = util.MustParseFloat(lngStr)
 		}
 
+		isCacheHit := false
+		if val, exists := c.Get("is_cache_hit"); exists {
+			isCacheHit = val.(bool)
+		}
+
 		// Log request metrics (including coordinates if available, handled asynchronously by store)
-		s.LogRequest(backendStr, status, errorType, lat, lng)
+		s.LogRequest(backendStr, status, errorType, lat, lng, isCacheHit)
 
 		// Update aggregated location count only for successful requests
 		if status < 400 && lat != 0 && lng != 0 {

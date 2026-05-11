@@ -10,7 +10,7 @@ import (
 
 func TestHandleOpenWatersExtremes_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false)
 
 	r := gin.Default()
 	r.GET("/tides/extremes", h.HandleOpenWatersExtremes)
@@ -36,7 +36,7 @@ func TestHandleOpenWatersExtremes_Validation(t *testing.T) {
 
 func TestHandleOpenWatersTimeline_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false)
 	r := gin.Default()
 	r.GET("/tides/timeline", h.HandleOpenWatersTimeline)
 
@@ -61,7 +61,7 @@ func TestHandleOpenWatersTimeline_Validation(t *testing.T) {
 
 func TestHandleWeather_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false)
 	r := gin.Default()
 	r.GET("/weather/point", h.HandleWeather)
 
@@ -95,7 +95,7 @@ func TestHandleWeather_Validation(t *testing.T) {
 
 func TestHandleTides_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false)
 	r := gin.Default()
 	r.GET("/tides/stormglass", h.HandleTides)
 
@@ -111,7 +111,7 @@ func TestHandleTides_Validation(t *testing.T) {
 
 func TestHandleSeaLevel_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false)
 	r := gin.Default()
 	r.GET("/sealevel", h.HandleSeaLevel)
 
@@ -127,7 +127,7 @@ func TestHandleSeaLevel_Validation(t *testing.T) {
 
 func TestHandleReverseGeocode_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false)
 	r := gin.Default()
 	r.GET("/geocoding", h.HandleReverseGeocode)
 

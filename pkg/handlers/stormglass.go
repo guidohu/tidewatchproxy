@@ -84,6 +84,7 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 	if h.useCache {
 		if val, err := h.redisClient.Get(h.ctx, cacheKey).Result(); err == nil {
 			c.Header("X-Cache", "HIT")
+			c.Set("is_cache_hit", true)
 			c.Data(http.StatusOK, "application/json", []byte(val))
 			return
 		}
@@ -250,6 +251,7 @@ func (h *Handler) HandleTides(c *gin.Context) {
 	if h.useCache {
 		if val, err := h.redisClient.Get(h.ctx, cacheKey).Result(); err == nil {
 			c.Header("X-Cache", "HIT")
+			c.Set("is_cache_hit", true)
 			c.Data(http.StatusOK, "application/json", []byte(val))
 			return
 		}
@@ -368,6 +370,7 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 	if h.useCache {
 		if val, err := h.redisClient.Get(h.ctx, cacheKey).Result(); err == nil {
 			c.Header("X-Cache", "HIT")
+			c.Set("is_cache_hit", true)
 			c.Data(http.StatusOK, "application/json", []byte(val))
 			return
 		}

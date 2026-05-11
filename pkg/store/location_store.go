@@ -30,6 +30,7 @@ type requestEntry struct {
 	errorType  string
 	lat        float64
 	lng        float64
+	isCacheHit bool
 }
 
 type locationEntry struct {
@@ -44,10 +45,12 @@ type LocationStats struct {
 }
 
 type BackendStats struct {
-	Backend   string `json:"backend"`
-	Success   int    `json:"success"`
-	Failed    int    `json:"failed"`
-	Locations int    `json:"locations"`
+	Backend      string `json:"backend"`
+	Success      int    `json:"success"`
+	Failed       int    `json:"failed"`
+	CacheSuccess int    `json:"cache_success"`
+	CacheFailed  int    `json:"cache_failed"`
+	Locations    int    `json:"locations"`
 }
 
 type FailureReason struct {
@@ -104,7 +107,8 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 			status_code INTEGER,
 			error_type TEXT,
 			lat REAL,
-			lng REAL
+			lng REAL,
+			is_cache_hit INTEGER DEFAULT 0
 		);
 		CREATE TABLE IF NOT EXISTS error_logs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +139,7 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN timestamp DATETIME DEFAULT CURRENT_TIMESTAMP")
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN lat REAL")
 	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN lng REAL")
+	_, _ = db.Exec("ALTER TABLE requests ADD COLUMN is_cache_hit INTEGER DEFAULT 0")
 	_, _ = db.Exec("ALTER TABLE error_logs ADD COLUMN upstream_response TEXT")
 
 	// Ensure existing rows have a timestamp if it was NULL
@@ -144,8 +149,8 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 
 	// Prepare statements
 	stmtRequest, err := db.Prepare(`
-		INSERT INTO requests (backend, status_code, error_type, lat, lng)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO requests (backend, status_code, error_type, lat, lng, is_cache_hit)
+		VALUES (?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare request statement: %w", err)
@@ -223,7 +228,7 @@ func (s *LocationStore) runWorker() {
 					latVal = util.Round(req.lat, 2)
 					lngVal = util.Round(req.lng, 2)
 				}
-				txStmt.Exec(req.backend, req.statusCode, req.errorType, latVal, lngVal)
+				txStmt.Exec(req.backend, req.statusCode, req.errorType, latVal, lngVal, req.isCacheHit)
 			}
 		}
 
@@ -350,7 +355,7 @@ func (s *LocationStore) GetAllLocations(days int) ([]LocationStats, error) {
 	return stats, nil
 }
 
-func (s *LocationStore) LogRequest(backend string, statusCode int, errorType string, lat, lng float64) {
+func (s *LocationStore) LogRequest(backend string, statusCode int, errorType string, lat, lng float64, isCacheHit bool) {
 	select {
 	case s.requestChan <- requestEntry{
 		backend:    backend,
@@ -358,6 +363,7 @@ func (s *LocationStore) LogRequest(backend string, statusCode int, errorType str
 		errorType:  errorType,
 		lat:        lat,
 		lng:        lng,
+		isCacheHit: isCacheHit,
 	}:
 	default:
 		log.Printf("Warning: requestChan full, dropping request log")
@@ -421,6 +427,8 @@ func (s *LocationStore) GetBackendStats(days int) ([]BackendStats, error) {
 			backend, 
 			SUM(CASE WHEN status_code < 400 THEN 1 ELSE 0 END) as success,
 			SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as failed,
+			SUM(CASE WHEN status_code < 400 AND is_cache_hit = 1 THEN 1 ELSE 0 END) as cache_success,
+			SUM(CASE WHEN status_code >= 400 AND is_cache_hit = 1 THEN 1 ELSE 0 END) as cache_failed,
 			COUNT(DISTINCT lat || ',' || lng) as locations
 		FROM requests`
 	var args []interface{}
@@ -441,7 +449,7 @@ func (s *LocationStore) GetBackendStats(days int) ([]BackendStats, error) {
 	var stats []BackendStats
 	for rows.Next() {
 		var st BackendStats
-		if err := rows.Scan(&st.Backend, &st.Success, &st.Failed, &st.Locations); err != nil {
+		if err := rows.Scan(&st.Backend, &st.Success, &st.Failed, &st.CacheSuccess, &st.CacheFailed, &st.Locations); err != nil {
 			return nil, err
 		}
 		stats = append(stats, st)

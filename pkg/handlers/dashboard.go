@@ -151,6 +151,9 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
         .success { color: #10b981; }
         .failed { color: #ef4444; }
         .total { color: #1e293b; }
+        .cache-success { color: #34d399; }
+        .cache-failed { color: #f87171; }
+        .cache-total { color: #475569; }
 
         .error-table {
             width: 100%;
@@ -236,18 +239,34 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
             </div>
             <div class="card">
                 <h2>API Performance</h2>
-                <div class="stats-widget">
-                    <div class="stat-item">
-                        <div class="stat-value success" id="successValue">0</div>
-                        <div class="stat-label">Success</div>
+                <div class="stats-widget" style="flex-direction: column; align-items: stretch; gap: 0;">
+                    <div style="display: flex; justify-content: space-around; width: 100%;">
+                        <div class="stat-item">
+                            <div class="stat-value success" id="successValue">0</div>
+                            <div class="stat-label">Success</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value failed" id="failedValue">0</div>
+                            <div class="stat-label">Failures</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value total" id="totalValue">0</div>
+                            <div class="stat-label">Total</div>
+                        </div>
                     </div>
-                    <div class="stat-item">
-                        <div class="stat-value failed" id="failedValue">0</div>
-                        <div class="stat-label">Failures</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value total" id="totalValue">0</div>
-                        <div class="stat-label">Total Requests</div>
+                    <div style="display: flex; justify-content: space-around; width: 100%; padding-top: 15px; margin-top: 15px; border-top: 1px solid #f1f5f9;">
+                        <div class="stat-item">
+                            <div class="stat-value cache-success" id="cacheSuccessValue">0</div>
+                            <div class="stat-label">Cache Success</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value cache-failed" id="cacheFailedValue">0</div>
+                            <div class="stat-label">Cache Failures</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value cache-total" id="cacheTotalValue">0</div>
+                            <div class="stat-label">Cache Total</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -312,6 +331,14 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
         });
         map.addLayer(markerCluster);
 
+        function formatNumber(num) {
+            if (num < 1000) return num.toLocaleString();
+            const k = num / 1000;
+            if (k < 10) return k.toFixed(2) + 'k';
+            if (k < 100) return k.toFixed(1) + 'k';
+            return Math.round(k) + 'k';
+        }
+
         function updateDashboard() {
             const days = document.getElementById('timeframe').value;
             
@@ -344,9 +371,17 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                     const failed = data.reduce((a, b) => a + b.failed, 0);
                     const total = success + failed;
 
-                    document.getElementById('totalValue').innerText = total.toLocaleString();
-                    document.getElementById('successValue').innerText = success.toLocaleString();
-                    document.getElementById('failedValue').innerText = failed.toLocaleString();
+                    const cacheSuccess = data.reduce((a, b) => a + (b.cache_success || 0), 0);
+                    const cacheFailed = data.reduce((a, b) => a + (b.cache_failed || 0), 0);
+                    const cacheTotal = cacheSuccess + cacheFailed;
+
+                    document.getElementById('totalValue').innerText = formatNumber(total);
+                    document.getElementById('successValue').innerText = formatNumber(success);
+                    document.getElementById('failedValue').innerText = formatNumber(failed);
+
+                    document.getElementById('cacheTotalValue').innerText = formatNumber(cacheTotal);
+                    document.getElementById('cacheSuccessValue').innerText = formatNumber(cacheSuccess);
+                    document.getElementById('cacheFailedValue').innerText = formatNumber(cacheFailed);
 
                     const locBody = document.getElementById('locationStatsBody');
                     if (data.length === 0) {
