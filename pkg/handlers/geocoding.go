@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"tide_watch_proxy/pkg/models"
 	"tide_watch_proxy/pkg/util"
@@ -46,15 +47,17 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 		return
 	}
 
-	// Check memory cache if enabled
+	// Check Redis cache if enabled
+	cacheKey := "geocode:" + key
 	if h.useCache {
-		h.locationCacheMu.RLock()
-		if cached, ok := h.locationCache[key]; ok {
-			h.locationCacheMu.RUnlock()
-			c.JSON(http.StatusOK, cached)
-			return
+		if val, err := h.redisClient.Get(h.ctx, cacheKey).Result(); err == nil {
+			c.Header("X-Cache", "HIT")
+			var cached models.LocationResponse
+			if err := json.Unmarshal([]byte(val), &cached); err == nil {
+				c.JSON(http.StatusOK, cached)
+				return
+			}
 		}
-		h.locationCacheMu.RUnlock()
 	}
 
 	// Fetch from BigDataCloud
@@ -98,12 +101,12 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 		CountryCode: raw.CountryCode,
 	}
 
-	// Cache result if enabled
+	// Cache result if enabled (30 days)
 	if h.useCache {
-		h.locationCacheMu.Lock()
-		h.locationCache[key] = filtered
-		h.locationCacheMu.Unlock()
+		jsonData, _ := json.Marshal(filtered)
+		h.redisClient.Set(h.ctx, cacheKey, jsonData, 30*24*time.Hour)
 	}
 
+	c.Header("X-Cache", "MISS")
 	c.JSON(http.StatusOK, filtered)
 }
