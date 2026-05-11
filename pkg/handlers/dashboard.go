@@ -64,6 +64,17 @@ func (h *DashboardHandler) HandleErrorLogsAPI(c *gin.Context) {
 	c.JSON(http.StatusOK, logs)
 }
 
+func (h *DashboardHandler) HandleUsageAPI(c *gin.Context) {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
+	stats, err := h.store.GetUsageStats(days)
+	if err != nil {
+		log.Printf("Error fetching usage stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch usage stats"})
+		return
+	}
+	c.JSON(http.StatusOK, stats)
+}
+
 func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
 	html := `<!DOCTYPE html>
 <html>
@@ -209,6 +220,13 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
             <div id="map"></div>
         </div>
 
+        <div class="card">
+            <h2 id="usageTitle">API Usage Trend</h2>
+            <div class="chart-container" style="height: 300px;">
+                <canvas id="usageChart"></canvas>
+            </div>
+        </div>
+
         <div class="bottom-grid">
             <div class="card">
                 <h2>Top Failure Reasons</h2>
@@ -277,6 +295,7 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
 
     <script>
         let failureChart;
+        let usageChart;
         let markerCluster;
 
         // Map Initialization
@@ -391,6 +410,68 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                             '<td><div class="code-block" title="' + (log.response_body || '').replace(/"/g, '&quot;') + '">' + log.response_body + '</div></td>' +
                         '</tr>';
                     }).join('');
+                });
+
+            // Fetch Usage Trend
+            fetch('/dashboard/api/usage?days=' + days)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data) data = [];
+                    
+                    let unitLabel = "Requests per Day";
+                    if (days == 1) unitLabel = "Requests per 5 Minutes";
+                    else if (days == 7) unitLabel = "Requests per Hour";
+                    
+                    document.getElementById('usageTitle').innerText = "API Usage Trend (" + unitLabel + ")";
+
+                    if (usageChart) usageChart.destroy();
+                    usageChart = new Chart(document.getElementById('usageChart'), {
+                        type: 'bar',
+                        data: {
+                            labels: data.map(d => {
+                                const date = new Date(d.bucket);
+                                if (days == 1) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                if (days == 7) return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.getHours() + ':00';
+                                return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                            }),
+                            datasets: [{
+                                label: 'API Requests',
+                                data: data.map(d => d.count),
+                                backgroundColor: '#3b82f6',
+                                borderRadius: 4,
+                                barPercentage: 0.8,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: { font: { size: 11 } }
+                                },
+                                x: {
+                                    grid: { display: false },
+                                    ticks: { 
+                                        font: { size: 10 },
+                                        maxRotation: 45,
+                                        minRotation: 45
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    backgroundColor: '#1e293b',
+                                    padding: 12,
+                                    titleFont: { size: 14, weight: 'bold' },
+                                    bodyFont: { size: 13 },
+                                    displayColors: false
+                                }
+                            }
+                        }
+                    });
                 });
         }
 
