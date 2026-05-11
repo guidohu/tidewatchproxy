@@ -6,8 +6,9 @@ import (
 	"log"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"tide_watch_proxy/pkg/util"
+
+	_ "modernc.org/sqlite"
 )
 
 type LocationStore struct {
@@ -288,7 +289,6 @@ func (s *LocationStore) runWorker() {
 	}
 }
 
-
 func (s *LocationStore) startCleanupTask() {
 	// Run cleanup immediately on start
 	s.CleanupOldLogs()
@@ -508,15 +508,16 @@ func (s *LocationStore) GetUsageStats(days int) ([]UsageStats, error) {
 			GROUP BY bucket
 			ORDER BY bucket`
 	} else {
-		// 30 days, 1 day buckets
+		// 30 days or All Time, 1 day buckets
 		query = `
 			SELECT 
 				strftime('%Y-%m-%d', timestamp) as bucket,
 				COUNT(*) as count
-			FROM requests
-			WHERE timestamp >= datetime('now', '-30 days')
-			GROUP BY bucket
-			ORDER BY bucket`
+			FROM requests`
+		if days > 0 {
+			query += " WHERE timestamp >= datetime('now', '-" + fmt.Sprintf("%d", days) + " days')"
+		}
+		query += " GROUP BY bucket ORDER BY bucket"
 	}
 
 	rows, err := s.db.Query(query, args...)
