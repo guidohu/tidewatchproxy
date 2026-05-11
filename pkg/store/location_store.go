@@ -54,6 +54,11 @@ type FailureReason struct {
 	Count  int    `json:"count"`
 }
 
+type UsageStats struct {
+	Bucket string `json:"bucket"`
+	Count  int    `json:"count"`
+}
+
 func NewLocationStore(dbPath string) (*LocationStore, error) {
 	// Add busy timeout to handle concurrent writes
 	dsn := fmt.Sprintf("%s?_busy_timeout=5000", dbPath)
@@ -476,4 +481,57 @@ func (s *LocationStore) GetFailureReasons(days int) ([]FailureReason, error) {
 		reasons = append(reasons, r)
 	}
 	return reasons, nil
+}
+
+func (s *LocationStore) GetUsageStats(days int) ([]UsageStats, error) {
+	var query string
+	var args []interface{}
+
+	if days <= 1 {
+		// 24 hours, 5 minute buckets
+		query = `
+			SELECT 
+				strftime('%Y-%m-%d %H:%M', datetime((strftime('%s', timestamp) / 300) * 300, 'unixepoch')) as bucket,
+				COUNT(*) as count
+			FROM requests
+			WHERE timestamp >= datetime('now', '-24 hours')
+			GROUP BY bucket
+			ORDER BY bucket`
+	} else if days <= 7 {
+		// 7 days, 1 hour buckets
+		query = `
+			SELECT 
+				strftime('%Y-%m-%d %H:00', timestamp) as bucket,
+				COUNT(*) as count
+			FROM requests
+			WHERE timestamp >= datetime('now', '-7 days')
+			GROUP BY bucket
+			ORDER BY bucket`
+	} else {
+		// 30 days, 1 day buckets
+		query = `
+			SELECT 
+				strftime('%Y-%m-%d', timestamp) as bucket,
+				COUNT(*) as count
+			FROM requests
+			WHERE timestamp >= datetime('now', '-30 days')
+			GROUP BY bucket
+			ORDER BY bucket`
+	}
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []UsageStats
+	for rows.Next() {
+		var st UsageStats
+		if err := rows.Scan(&st.Bucket, &st.Count); err != nil {
+			return nil, err
+		}
+		stats = append(stats, st)
+	}
+	return stats, nil
 }
