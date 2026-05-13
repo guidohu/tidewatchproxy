@@ -39,3 +39,5 @@ tide_watch_proxy
 
 # Specific testing files
 docker-compose-testing.yml
+test_metrics.db-shm
+test_metrics.db-wal

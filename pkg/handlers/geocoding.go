@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"tide_watch_proxy/pkg/models"
@@ -30,14 +31,23 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 	latStr := c.Query("latitude")
 	lngStr := c.Query("longitude")
 
-	if latStr == "" || lngStr == "" {
+	latVal, latErr := strconv.ParseFloat(latStr, 64)
+	lngVal, lngErr := strconv.ParseFloat(lngStr, 64)
+
+	if latStr == "" || lngStr == "" || latErr != nil || lngErr != nil {
 		c.Set("error_type", "Invalid Coordinates")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude must be valid numbers"})
 		return
 	}
 
-	lat := util.MustParseFloat(latStr)
-	lng := util.MustParseFloat(lngStr)
+	if !util.IsValidLatitude(latVal) || !util.IsValidLongitude(lngVal) {
+		c.Set("error_type", "Invalid Coordinates")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90, longitude between -180 and 180"})
+		return
+	}
+
+	lat := latVal
+	lng := lngVal
 	key := fmt.Sprintf("%.2f,%.2f", util.Round(lat, 2), util.Round(lng, 2))
 
 	// Check CSV first - this always works, regardless of useCache flag

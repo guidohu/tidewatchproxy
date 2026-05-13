@@ -24,8 +24,12 @@ func MustParseFloat(s string) float64 {
 	return f
 }
 
-func IsValidCoordinate(val float64) bool {
-	return val >= -180 && val <= 180
+func IsValidLatitude(lat float64) bool {
+	return lat >= -90 && lat <= 90
+}
+
+func IsValidLongitude(lng float64) bool {
+	return lng >= -180 && lng <= 180
 }
 
 func ToPtr(f float64) *float64 {
