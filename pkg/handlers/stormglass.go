@@ -9,9 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"tide_watch_proxy/pkg/models"
 	"tide_watch_proxy/pkg/util"
+
+	"github.com/gin-gonic/gin"
 )
 
 // @Summary Get Weather Data
@@ -47,9 +48,9 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 		return
 	}
 
-	if !util.IsValidCoordinate(latVal) || !util.IsValidCoordinate(lngVal) {
+	if !util.IsValidLatitude(latVal) || !util.IsValidLongitude(lngVal) {
 		c.Set("error_type", "Invalid Coordinates")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90, longitude between -180 and 180"})
 		return
 	}
 
@@ -237,9 +238,9 @@ func (h *Handler) HandleTides(c *gin.Context) {
 		return
 	}
 
-	if !util.IsValidCoordinate(latVal) || !util.IsValidCoordinate(lngVal) {
+	if !util.IsValidLatitude(latVal) || !util.IsValidLongitude(lngVal) {
 		c.Set("error_type", "Invalid Coordinates")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90, longitude between -180 and 180"})
 		return
 	}
 
@@ -356,9 +357,9 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 		return
 	}
 
-	if !util.IsValidCoordinate(latVal) || !util.IsValidCoordinate(lngVal) {
+	if !util.IsValidLatitude(latVal) || !util.IsValidLongitude(lngVal) {
 		c.Set("error_type", "Invalid Coordinates")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "coordinates must be between -180 and 180"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90, longitude between -180 and 180"})
 		return
 	}
 

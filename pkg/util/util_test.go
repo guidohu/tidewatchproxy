@@ -25,7 +25,26 @@ func TestRound(t *testing.T) {
 	}
 }
 
-func TestIsValidCoordinate(t *testing.T) {
+func TestIsValidLatitude(t *testing.T) {
+	tests := []struct {
+		val  float64
+		want bool
+	}{
+		{0, true},
+		{90, true},
+		{-90, true},
+		{91, false},
+		{-91, false},
+	}
+
+	for _, tt := range tests {
+		if got := IsValidLatitude(tt.val); got != tt.want {
+			t.Errorf("IsValidLatitude(%v) = %v, want %v", tt.val, got, tt.want)
+		}
+	}
+}
+
+func TestIsValidLongitude(t *testing.T) {
 	tests := []struct {
 		val  float64
 		want bool
@@ -38,8 +57,8 @@ func TestIsValidCoordinate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := IsValidCoordinate(tt.val); got != tt.want {
-			t.Errorf("IsValidCoordinate(%v) = %v, want %v", tt.val, got, tt.want)
+		if got := IsValidLongitude(tt.val); got != tt.want {
+			t.Errorf("IsValidLongitude(%v) = %v, want %v", tt.val, got, tt.want)
 		}
 	}
 }

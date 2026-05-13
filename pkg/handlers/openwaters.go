@@ -37,9 +37,18 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	datum := c.Query("datum")
 	units := c.DefaultQuery("units", "meters")
 
-	if latitude == "" || longitude == "" {
+	latVal, latErr := strconv.ParseFloat(latitude, 64)
+	lngVal, lngErr := strconv.ParseFloat(longitude, 64)
+
+	if latitude == "" || longitude == "" || latErr != nil || lngErr != nil {
 		c.Set("error_type", "Invalid Coordinates")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude must be valid numbers"})
+		return
+	}
+
+	if !util.IsValidLatitude(latVal) || !util.IsValidLongitude(lngVal) {
+		c.Set("error_type", "Invalid Coordinates")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90, longitude between -180 and 180"})
 		return
 	}
 

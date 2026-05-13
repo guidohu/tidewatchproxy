@@ -110,7 +110,7 @@ func LocationLogger(s *store.LocationStore) gin.HandlerFunc {
 
 		// Update aggregated location count only for successful requests
 		if status < 400 && lat != 0 && lng != 0 {
-			if util.IsValidCoordinate(lat) && util.IsValidCoordinate(lng) {
+			if util.IsValidLatitude(lat) && util.IsValidLongitude(lng) {
 				s.LogLocation(lat, lng)
 			}
 		}
