@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/go-redis/redis/v8"
+	"tide_watch_proxy/pkg/store"
 )
 
 type Config struct {
@@ -20,20 +21,22 @@ type Handler struct {
 	stormglassAPIKey   string
 	bigDataCloudAPIKey string
 	useCache           bool
-	customLocations  map[string]string
-	debug            bool
-	ctx              context.Context
+	customLocations    map[string]string
+	debug              bool
+	ctx                context.Context
+	locationStore      *store.LocationStore
 }
 
-func NewHandler(redisClient *redis.Client, stormglassAPIKey string, bigDataCloudAPIKey string, useCache bool, customLocations map[string]string, debug bool) *Handler {
+func NewHandler(redisClient *redis.Client, stormglassAPIKey string, bigDataCloudAPIKey string, useCache bool, customLocations map[string]string, debug bool, locationStore *store.LocationStore) *Handler {
 	return &Handler{
 		redisClient:        redisClient,
 		stormglassAPIKey:   stormglassAPIKey,
 		bigDataCloudAPIKey: bigDataCloudAPIKey,
 		useCache:           useCache,
-		customLocations:  customLocations,
-		debug:            debug,
-		ctx:              context.Background(),
+		customLocations:    customLocations,
+		debug:              debug,
+		ctx:                context.Background(),
+		locationStore:      locationStore,
 	}
 }
 

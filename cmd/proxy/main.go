@@ -130,7 +130,7 @@ func main() {
 	}
 
 	// Initialize Handler
-	h := handlers.NewHandler(redisClient, stormglassAPIKey, bigDataCloudAPIKey, useCache, customLocations, debug)
+	h := handlers.NewHandler(redisClient, stormglassAPIKey, bigDataCloudAPIKey, useCache, customLocations, debug, locationStore)
 	dashboardHandler := handlers.NewDashboardHandler(locationStore)
 
 	r := gin.Default()
@@ -139,6 +139,8 @@ func main() {
 	api := r.Group("/")
 	api.Use(middleware.LocationLogger(locationStore))
 	{
+		api.GET("/ping", middleware.AppIDMiddleware(allowedAppIDs), h.HandlePing)
+		api.POST("/ping", middleware.AppIDMiddleware(allowedAppIDs), h.HandlePing)
 		api.GET("/v2/weather/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleWeather)
 		api.GET("/v2/tide/extremes/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleTides)
 		api.GET("/v2/tide/sea-level/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleSeaLevel)
@@ -156,6 +158,8 @@ func main() {
 	r.GET("/dashboard/api/reasons", dashboardHandler.HandleFailureReasonsAPI)
 	r.GET("/dashboard/api/errors", dashboardHandler.HandleErrorLogsAPI)
 	r.GET("/dashboard/api/usage", dashboardHandler.HandleUsageAPI)
+	r.GET("/dashboard/api/users-per-version", dashboardHandler.HandleUsersPerVersionAPI)
+	r.GET("/dashboard/api/ping-usage", dashboardHandler.HandlePingUsageAPI)
 
 	// Swagger documentation route (no logging)
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

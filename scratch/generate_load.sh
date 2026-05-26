@@ -8,20 +8,28 @@ CONCURRENCY=10
 ENDPOINTS=(
     "/tides/extremes"
     "/tides/timeline"
-	"/data/reverse-geocode"
+    "/data/reverse-geocode"
+    "/ping"
 )
 
 echo "Starting optimized load generation: $NUM_REQUESTS requests with concurrency $CONCURRENCY..."
 
-# Function to generate a random coordinate
+# Function to generate a random coordinate or ping
 gen_url() {
-    local lat_raw=$(( RANDOM % 18001 - 9000 ))
-    local lng_raw=$(( RANDOM % 36001 - 18000 ))
-    # Use awk for reliable float formatting to avoid issues like "0.-50"
-    local lat=$(awk "BEGIN {printf \"%.2f\", $lat_raw / 100}")
-    local lng=$(awk "BEGIN {printf \"%.2f\", $lng_raw / 100}")
     local endpoint=${ENDPOINTS[$RANDOM % ${#ENDPOINTS[@]}]}
-    echo "${BASE_URL}${endpoint}?latitude=${lat}&longitude=${lng}"
+    if [ "$endpoint" = "/ping" ]; then
+        local uuid_num=$(( RANDOM % 30 + 1 ))
+        local versions=("1.0.0" "1.0.1" "1.1.0" "2.0.0")
+        local ver=${versions[$RANDOM % 4]}
+        echo "${BASE_URL}${endpoint}?uuid=uuid-${uuid_num}&version=${ver}"
+    else
+        local lat_raw=$(( RANDOM % 18001 - 9000 ))
+        local lng_raw=$(( RANDOM % 36001 - 18000 ))
+        # Use awk for reliable float formatting to avoid issues like "0.-50"
+        local lat=$(awk "BEGIN {printf \"%.2f\", $lat_raw / 100}")
+        local lng=$(awk "BEGIN {printf \"%.2f\", $lng_raw / 100}")
+        echo "${BASE_URL}${endpoint}?latitude=${lat}&longitude=${lng}"
+    fi
 }
 
 # Pre-generate URLs to avoid overhead during execution

@@ -12,16 +12,24 @@ import (
 )
 
 type LocationStore struct {
-	db           *sql.DB
-	requestChan  chan requestEntry
-	locationChan chan locationEntry
-	errorChan    chan ErrorLog
-	stopChan     chan struct{}
+	db              *sql.DB
+	requestChan     chan requestEntry
+	locationChan    chan locationEntry
+	errorChan       chan ErrorLog
+	pingChan        chan pingEntry
+	stopChan        chan struct{}
 
 	// Prepared statements
-	stmtRequest  *sql.Stmt
-	stmtLocation *sql.Stmt
-	stmtError    *sql.Stmt
+	stmtRequest     *sql.Stmt
+	stmtLocation    *sql.Stmt
+	stmtError       *sql.Stmt
+	stmtPingRequest *sql.Stmt
+	stmtUserVersion *sql.Stmt
+}
+
+type pingEntry struct {
+	UUID    string
+	Version string
 }
 
 type requestEntry struct {
@@ -123,12 +131,25 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 			backend TEXT,
 			error_type TEXT
 		);
+		CREATE TABLE IF NOT EXISTS user_versions (
+			uuid TEXT PRIMARY KEY,
+			version TEXT,
+			last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS ping_requests (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+			uuid TEXT,
+			version TEXT
+		);
 
 		-- Performance Indexes
 		CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
 		CREATE INDEX IF NOT EXISTS idx_requests_backend ON requests(backend);
 		CREATE INDEX IF NOT EXISTS idx_requests_lat_lng ON requests(lat, lng);
 		CREATE INDEX IF NOT EXISTS idx_error_logs_timestamp ON error_logs(timestamp);
+		CREATE INDEX IF NOT EXISTS idx_ping_requests_timestamp ON ping_requests(timestamp);
+		CREATE INDEX IF NOT EXISTS idx_user_versions_last_seen ON user_versions(last_seen);
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tables and indexes: %w", err)
@@ -173,15 +194,35 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 		return nil, fmt.Errorf("failed to prepare error statement: %w", err)
 	}
 
+	stmtPingRequest, err := db.Prepare(`
+		INSERT INTO ping_requests (uuid, version)
+		VALUES (?, ?)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare ping request statement: %w", err)
+	}
+
+	stmtUserVersion, err := db.Prepare(`
+		INSERT INTO user_versions (uuid, version, last_seen)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(uuid) DO UPDATE SET version = ?, last_seen = CURRENT_TIMESTAMP
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare user version statement: %w", err)
+	}
+
 	store := &LocationStore{
-		db:           db,
-		requestChan:  make(chan requestEntry, 1000),
-		locationChan: make(chan locationEntry, 1000),
-		errorChan:    make(chan ErrorLog, 100),
-		stopChan:     make(chan struct{}),
-		stmtRequest:  stmtRequest,
-		stmtLocation: stmtLocation,
-		stmtError:    stmtError,
+		db:              db,
+		requestChan:     make(chan requestEntry, 1000),
+		locationChan:    make(chan locationEntry, 1000),
+		errorChan:       make(chan ErrorLog, 100),
+		pingChan:        make(chan pingEntry, 1000),
+		stopChan:        make(chan struct{}),
+		stmtRequest:     stmtRequest,
+		stmtLocation:    stmtLocation,
+		stmtError:       stmtError,
+		stmtPingRequest: stmtPingRequest,
+		stmtUserVersion: stmtUserVersion,
 	}
 
 	// Start background worker
@@ -198,6 +239,8 @@ func (s *LocationStore) Close() error {
 	s.stmtRequest.Close()
 	s.stmtLocation.Close()
 	s.stmtError.Close()
+	s.stmtPingRequest.Close()
+	s.stmtUserVersion.Close()
 	return s.db.Close()
 }
 
@@ -206,10 +249,11 @@ func (s *LocationStore) runWorker() {
 		requests  []requestEntry
 		locations []locationEntry
 		errors    []ErrorLog
+		pings     []pingEntry
 	)
 
 	flush := func() {
-		if len(requests) == 0 && len(locations) == 0 && len(errors) == 0 {
+		if len(requests) == 0 && len(locations) == 0 && len(errors) == 0 && len(pings) == 0 {
 			return
 		}
 
@@ -252,17 +296,27 @@ func (s *LocationStore) runWorker() {
 			}
 		}
 
+		if len(pings) > 0 {
+			txPingReq := tx.Stmt(s.stmtPingRequest)
+			txUserVer := tx.Stmt(s.stmtUserVersion)
+			for _, p := range pings {
+				txPingReq.Exec(p.UUID, p.Version)
+				txUserVer.Exec(p.UUID, p.Version, p.Version)
+			}
+		}
+
 		if err := tx.Commit(); err != nil {
 			log.Printf("Error committing transaction: %v", err)
 		}
 
-		if len(requests)+len(locations)+len(errors) > 10 {
-			log.Printf("Flushed %d items to DB in %v", len(requests)+len(locations)+len(errors), time.Since(start))
+		if len(requests)+len(locations)+len(errors)+len(pings) > 10 {
+			log.Printf("Flushed %d items to DB in %v", len(requests)+len(locations)+len(errors)+len(pings), time.Since(start))
 		}
 
 		requests = nil
 		locations = nil
 		errors = nil
+		pings = nil
 	}
 
 	ticker := time.NewTicker(5 * time.Second)
@@ -283,6 +337,11 @@ func (s *LocationStore) runWorker() {
 		case err := <-s.errorChan:
 			errors = append(errors, err)
 			if len(errors) >= 50 {
+				flush()
+			}
+		case p := <-s.pingChan:
+			pings = append(pings, p)
+			if len(pings) >= 200 {
 				flush()
 			}
 		case <-ticker.C:
@@ -314,6 +373,10 @@ func (s *LocationStore) CleanupOldLogs() {
 	_, err = s.db.Exec("DELETE FROM error_logs WHERE timestamp < datetime('now', '-30 days')")
 	if err != nil {
 		log.Printf("Error cleaning up error logs: %v", err)
+	}
+	_, err = s.db.Exec("DELETE FROM ping_requests WHERE timestamp < datetime('now', '-30 days')")
+	if err != nil {
+		log.Printf("Error cleaning up ping requests: %v", err)
 	}
 }
 
@@ -538,6 +601,132 @@ func (s *LocationStore) GetUsageStats(days int) ([]UsageStats, error) {
 	for rows.Next() {
 		var st UsageStats
 		if err := rows.Scan(&st.Bucket, &st.Count); err != nil {
+			return nil, err
+		}
+		stats = append(stats, st)
+	}
+	return stats, nil
+}
+
+func (s *LocationStore) LogPing(uuid, version string) {
+	select {
+	case s.pingChan <- pingEntry{UUID: uuid, Version: version}:
+	default:
+		log.Printf("Warning: pingChan full, dropping ping log")
+	}
+}
+
+type VersionCount struct {
+	Version string `json:"version"`
+	Count   int    `json:"count"`
+}
+
+type UsersPerVersion struct {
+	Last24h []VersionCount `json:"last_24h"`
+	Last7d  []VersionCount `json:"last_7d"`
+	Last30d []VersionCount `json:"last_30d"`
+}
+
+func (s *LocationStore) GetUsersPerVersion() (*UsersPerVersion, error) {
+	var result UsersPerVersion
+
+	queryInterval := func(interval string) ([]VersionCount, error) {
+		query := `
+			SELECT version, COUNT(*) as count 
+			FROM user_versions 
+			WHERE last_seen >= datetime('now', ?)
+			GROUP BY version
+			ORDER BY count DESC`
+		rows, err := s.db.Query(query, interval)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var counts []VersionCount
+		for rows.Next() {
+			var vc VersionCount
+			if err := rows.Scan(&vc.Version, &vc.Count); err != nil {
+				return nil, err
+			}
+			counts = append(counts, vc)
+		}
+		return counts, nil
+	}
+
+	var err error
+	result.Last24h, err = queryInterval("-24 hours")
+	if err != nil {
+		return nil, err
+	}
+	result.Last7d, err = queryInterval("-7 days")
+	if err != nil {
+		return nil, err
+	}
+	result.Last30d, err = queryInterval("-30 days")
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+type PingUsageStats struct {
+	Bucket  string `json:"bucket"`
+	Version string `json:"version"`
+	Count   int    `json:"count"`
+}
+
+func (s *LocationStore) GetPingUsageStats(days int) ([]PingUsageStats, error) {
+	var query string
+	var args []interface{}
+
+	if days <= 1 && days != 0 {
+		// 24 hours, 5 minute buckets
+		query = `
+			SELECT 
+				strftime('%Y-%m-%d %H:%M', datetime((strftime('%s', timestamp) / 300) * 300, 'unixepoch')) as bucket,
+				version,
+				COUNT(*) as count
+			FROM ping_requests
+			WHERE timestamp >= datetime('now', '-24 hours')
+			GROUP BY bucket, version
+			ORDER BY bucket`
+	} else if days <= 7 && days != 0 {
+		// 7 days, 1 hour buckets
+		query = `
+			SELECT 
+				strftime('%Y-%m-%d %H:00', timestamp) as bucket,
+				version,
+				COUNT(*) as count
+			FROM ping_requests
+			WHERE timestamp >= datetime('now', '-7 days')
+			GROUP BY bucket, version
+			ORDER BY bucket`
+	} else {
+		// 30 days or All Time, 1 day buckets
+		query = `
+			SELECT 
+				strftime('%Y-%m-%d', timestamp) as bucket,
+				version,
+				COUNT(*) as count
+			FROM ping_requests`
+		if days > 0 {
+			query += " WHERE timestamp >= datetime('now', '-" + fmt.Sprintf("%d", days) + " days')"
+		}
+		query += " GROUP BY bucket, version ORDER BY bucket"
+	}
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []PingUsageStats
+	for rows.Next() {
+		var st PingUsageStats
+		if err := rows.Scan(&st.Bucket, &st.Version, &st.Count); err != nil {
 			return nil, err
 		}
 		stats = append(stats, st)
