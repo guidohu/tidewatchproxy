@@ -232,7 +232,7 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
 <body>
     <div class="container">
         <div class="header">
-            <a href="/" style="text-decoration: none; color: inherit;"><h1>Tide Watch Proxy Dashboard</h1></a>
+            <a href="/dashboard" style="text-decoration: none; color: inherit;"><h1>Tide Watch Proxy Dashboard</h1></a>
             <select id="timeframe" onchange="updateDashboard()">
                 <option value="0">All Time</option>
                 <option value="1">Last 24 Hours</option>
