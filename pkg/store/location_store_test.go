@@ -28,7 +28,7 @@ func TestLocationStore_PingLoggingAndQuery(t *testing.T) {
 	time.Sleep(6 * time.Second)
 
 	// Verify user versions table
-	users, err := s.GetUsersPerVersion()
+	users, err := s.GetUsersPerVersion(1)
 	if err != nil {
 		t.Fatalf("GetUsersPerVersion failed: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestLocationStore_PingLoggingAndQuery(t *testing.T) {
 	// We expect 1 user on 1.0.1 (user-2) and 1 user on 1.1.0 (user-1, upgraded)
 	// Let's count them
 	var count101, count110 int
-	for _, vc := range users.Last24h {
+	for _, vc := range users {
 		if vc.Version == "1.0.1" {
 			count101 = vc.Count
 		} else if vc.Version == "1.1.0" {
