@@ -77,7 +77,8 @@ func (h *DashboardHandler) HandleUsageAPI(c *gin.Context) {
 }
 
 func (h *DashboardHandler) HandleUsersPerVersionAPI(c *gin.Context) {
-	stats, err := h.store.GetUsersPerVersion()
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
+	stats, err := h.store.GetUsersPerVersion(days)
 	if err != nil {
 		log.Printf("Error fetching users per version stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users per version stats"})
@@ -319,32 +320,21 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
             </div>
             <div class="card">
                 <h2>Active Users per Version</h2>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; font-size: 0.85rem;">
-                    <div>
-                        <div style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #64748b; margin-bottom: 8px; border-bottom: 2px solid #3b82f6; padding-bottom: 4px;">Last 24h</div>
-                        <table class="error-table" style="margin-top: 0;">
-                            <tbody id="users24hBody">
-                                <tr><td style="text-align:center;color:#94a3b8">No data</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #64748b; margin-bottom: 8px; border-bottom: 2px solid #8b5cf6; padding-bottom: 4px;">Last 7d</div>
-                        <table class="error-table" style="margin-top: 0;">
-                            <tbody id="users7dBody">
-                                <tr><td style="text-align:center;color:#94a3b8">No data</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #64748b; margin-bottom: 8px; border-bottom: 2px solid #ec4899; padding-bottom: 4px;">Last 30d</div>
-                        <table class="error-table" style="margin-top: 0;">
-                            <tbody id="users30dBody">
-                                <tr><td style="text-align:center;color:#94a3b8">No data</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
+                <div style="display: flex; flex-direction: column; align-items: center; padding: 10px 0 20px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px;">
+                    <div class="stat-value total" id="usersTotalValue" style="font-size: 2.5rem; font-weight: 800; color: #1e293b;">0</div>
+                    <div class="stat-label" style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Total Active Users</div>
                 </div>
+                <table class="error-table" style="margin-top: 0;">
+                    <thead>
+                        <tr>
+                            <th>Version</th>
+                            <th style="text-align: right;">Active Users</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersPerVersionBody">
+                        <tr><td colspan="2" style="text-align:center">No data available</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -578,7 +568,7 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                     if (days == 1) unitLabel = "Requests per 5 Minutes";
                     else if (days == 7) unitLabel = "Requests per Hour";
 
-                    document.getElementById('pingUsageTitle').innerText = "/ping Requests per Version (" + unitLabel + ")";
+                    document.getElementById('pingUsageTitle').innerText = "Ping Requests per Version (" + unitLabel + ")";
 
                     const buckets = [...new Set(data.map(d => d.bucket))].sort();
                     const versions = [...new Set(data.map(d => d.version))].sort();
@@ -651,25 +641,24 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                 });
 
             // Fetch Active Users per Version
-            fetch('/dashboard/api/users-per-version')
+            fetch('/dashboard/api/users-per-version?days=' + days)
                 .then(res => res.json())
                 .then(data => {
-                    const renderTable = (list, elementId) => {
-                        const el = document.getElementById(elementId);
-                        if (!list || list.length === 0) {
-                            el.innerHTML = '<tr><td style="text-align:center;color:#94a3b8">No data</td></tr>';
-                            return;
-                        }
-                        el.innerHTML = list.map(item =>
+                    if (!data) data = [];
+                    const total = data.reduce((a, b) => a + b.count, 0);
+                    document.getElementById('usersTotalValue').innerText = total.toLocaleString();
+
+                    const el = document.getElementById('usersPerVersionBody');
+                    if (data.length === 0) {
+                        el.innerHTML = '<tr><td colspan="2" style="text-align:center">No data available</td></tr>';
+                    } else {
+                        el.innerHTML = data.map(item =>
                             '<tr>' +
-                                '<td style="padding:6px 8px;">v' + item.version + '</td>' +
-                                '<td style="text-align:right;font-weight:600;padding:6px 8px;">' + item.count.toLocaleString() + '</td>' +
+                                '<td>v' + item.version + '</td>' +
+                                '<td style="text-align: right; font-weight: 600;">' + item.count.toLocaleString() + '</td>' +
                             '</tr>'
                         ).join('');
-                    };
-                    renderTable(data.last_24h, 'users24hBody');
-                    renderTable(data.last_7d, 'users7dBody');
-                    renderTable(data.last_30d, 'users30dBody');
+                    }
                 });
         }
 

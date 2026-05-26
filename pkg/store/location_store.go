@@ -627,48 +627,36 @@ type UsersPerVersion struct {
 	Last30d []VersionCount `json:"last_30d"`
 }
 
-func (s *LocationStore) GetUsersPerVersion() (*UsersPerVersion, error) {
-	var result UsersPerVersion
+func (s *LocationStore) GetUsersPerVersion(days int) ([]VersionCount, error) {
+	query := `
+		SELECT version, COUNT(*) as count 
+		FROM user_versions`
+	var args []interface{}
 
-	queryInterval := func(interval string) ([]VersionCount, error) {
-		query := `
-			SELECT version, COUNT(*) as count 
-			FROM user_versions 
-			WHERE last_seen >= datetime('now', ?)
-			GROUP BY version
-			ORDER BY count DESC`
-		rows, err := s.db.Query(query, interval)
-		if err != nil {
+	if days > 0 {
+		query += " WHERE last_seen >= datetime('now', ?)"
+		args = append(args, fmt.Sprintf("-%d days", days))
+	}
+
+	query += `
+		GROUP BY version
+		ORDER BY count DESC`
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var counts []VersionCount
+	for rows.Next() {
+		var vc VersionCount
+		if err := rows.Scan(&vc.Version, &vc.Count); err != nil {
 			return nil, err
 		}
-		defer rows.Close()
-
-		var counts []VersionCount
-		for rows.Next() {
-			var vc VersionCount
-			if err := rows.Scan(&vc.Version, &vc.Count); err != nil {
-				return nil, err
-			}
-			counts = append(counts, vc)
-		}
-		return counts, nil
+		counts = append(counts, vc)
 	}
-
-	var err error
-	result.Last24h, err = queryInterval("-24 hours")
-	if err != nil {
-		return nil, err
-	}
-	result.Last7d, err = queryInterval("-7 days")
-	if err != nil {
-		return nil, err
-	}
-	result.Last30d, err = queryInterval("-30 days")
-	if err != nil {
-		return nil, err
-	}
-
-	return &result, nil
+	return counts, nil
 }
 
 type PingUsageStats struct {
