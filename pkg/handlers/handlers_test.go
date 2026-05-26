@@ -10,7 +10,7 @@ import (
 
 func TestHandleOpenWatersExtremes_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
 
 	r := gin.Default()
 	r.GET("/tides/extremes", h.HandleOpenWatersExtremes)
@@ -36,7 +36,7 @@ func TestHandleOpenWatersExtremes_Validation(t *testing.T) {
 
 func TestHandleOpenWatersTimeline_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
 	r := gin.Default()
 	r.GET("/tides/timeline", h.HandleOpenWatersTimeline)
 
@@ -61,7 +61,7 @@ func TestHandleOpenWatersTimeline_Validation(t *testing.T) {
 
 func TestHandleWeather_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
 	r := gin.Default()
 	r.GET("/weather/point", h.HandleWeather)
 
@@ -95,7 +95,7 @@ func TestHandleWeather_Validation(t *testing.T) {
 
 func TestHandleTides_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
 	r := gin.Default()
 	r.GET("/tides/stormglass", h.HandleTides)
 
@@ -111,7 +111,7 @@ func TestHandleTides_Validation(t *testing.T) {
 
 func TestHandleSeaLevel_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
 	r := gin.Default()
 	r.GET("/sealevel", h.HandleSeaLevel)
 
@@ -127,7 +127,7 @@ func TestHandleSeaLevel_Validation(t *testing.T) {
 
 func TestHandleReverseGeocode_Validation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := NewHandler(nil, "", "", false, nil, false)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
 	r := gin.Default()
 	r.GET("/geocoding", h.HandleReverseGeocode)
 
@@ -139,6 +139,44 @@ func TestHandleReverseGeocode_Validation(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status 400 for missing params, got %v", w.Code)
 	}
+}
+
+func TestHandlePing_Validation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
+	r := gin.Default()
+	r.GET("/ping", h.HandlePing)
+
+	// Test 1: Missing params
+	req, _ := http.NewRequest("GET", "/ping", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for missing params, got %v", w.Code)
+	}
+
+	// Test 2: Invalid version format
+	req, _ = http.NewRequest("GET", "/ping?uuid=test-uuid&version=1.0", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for invalid version format, got %v", w.Code)
+	}
+
+	// Test 3: Invalid version letters
+	req, _ = http.NewRequest("GET", "/ping?uuid=test-uuid&version=1.a.0", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for invalid version letters, got %v", w.Code)
+	}
+
+	// Test 4: Valid ping
+	// Note: We pass a mock or nil locationStore which works fine for validation checks but would panic on write.
+	// Since HandlePing will call h.locationStore.LogPing, we'll verify it returns 400 for errors beforehand.
 }
 
 // More tests could be added here by mocking the http.DefaultClient

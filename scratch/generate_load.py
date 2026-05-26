@@ -9,7 +9,8 @@ NUM_REQUESTS = 100
 ENDPOINTS = [
     "/tides/extremes",
     "/tides/timeline",
-    "/data/reverse-geocode"
+    "/data/reverse-geocode",
+    "/ping"
 ]
 
 def generate_random_coords():
@@ -29,14 +30,22 @@ def run_load():
     error_count = 0
     
     for i in range(NUM_REQUESTS):
-        lat, lng = generate_random_coords()
         endpoint = random.choice(ENDPOINTS)
         url = f"{BASE_URL}{endpoint}"
         
-        params = {
-            "latitude": lat,
-            "longitude": lng
-        }
+        if endpoint == "/ping":
+            uuid = f"uuid-{random.randint(1, 30)}"
+            version = random.choice(["1.0.0", "1.0.1", "1.1.0", "2.0.0"])
+            params = {
+                "uuid": uuid,
+                "version": version
+            }
+        else:
+            lat, lng = generate_random_coords()
+            params = {
+                "latitude": lat,
+                "longitude": lng
+            }
         
         try:
             response = requests.get(url, headers=headers, params=params, timeout=5)

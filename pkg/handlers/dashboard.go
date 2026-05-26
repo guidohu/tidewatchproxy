@@ -5,8 +5,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
 	"tide_watch_proxy/pkg/store"
+
+	"github.com/gin-gonic/gin"
 )
 
 type DashboardHandler struct {
@@ -70,6 +71,27 @@ func (h *DashboardHandler) HandleUsageAPI(c *gin.Context) {
 	if err != nil {
 		log.Printf("Error fetching usage stats: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch usage stats"})
+		return
+	}
+	c.JSON(http.StatusOK, stats)
+}
+
+func (h *DashboardHandler) HandleUsersPerVersionAPI(c *gin.Context) {
+	stats, err := h.store.GetUsersPerVersion()
+	if err != nil {
+		log.Printf("Error fetching users per version stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users per version stats"})
+		return
+	}
+	c.JSON(http.StatusOK, stats)
+}
+
+func (h *DashboardHandler) HandlePingUsageAPI(c *gin.Context) {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
+	stats, err := h.store.GetPingUsageStats(days)
+	if err != nil {
+		log.Printf("Error fetching ping usage stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch ping usage stats"})
 		return
 	}
 	c.JSON(http.StatusOK, stats)
@@ -230,6 +252,13 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
             </div>
         </div>
 
+        <div class="card">
+            <h2 id="pingUsageTitle">Ping Requests per Version over Time</h2>
+            <div class="chart-container" style="height: 300px;">
+                <canvas id="pingUsageChart"></canvas>
+            </div>
+        </div>
+
         <div class="bottom-grid">
             <div class="card">
                 <h2>Top Failure Reasons</h2>
@@ -288,6 +317,35 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                     </tbody>
                 </table>
             </div>
+            <div class="card">
+                <h2>Active Users per Version</h2>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; font-size: 0.85rem;">
+                    <div>
+                        <div style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #64748b; margin-bottom: 8px; border-bottom: 2px solid #3b82f6; padding-bottom: 4px;">Last 24h</div>
+                        <table class="error-table" style="margin-top: 0;">
+                            <tbody id="users24hBody">
+                                <tr><td style="text-align:center;color:#94a3b8">No data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div>
+                        <div style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #64748b; margin-bottom: 8px; border-bottom: 2px solid #8b5cf6; padding-bottom: 4px;">Last 7d</div>
+                        <table class="error-table" style="margin-top: 0;">
+                            <tbody id="users7dBody">
+                                <tr><td style="text-align:center;color:#94a3b8">No data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div>
+                        <div style="font-weight: 600; text-transform: uppercase; font-size: 0.75rem; color: #64748b; margin-bottom: 8px; border-bottom: 2px solid #ec4899; padding-bottom: 4px;">Last 30d</div>
+                        <table class="error-table" style="margin-top: 0;">
+                            <tbody id="users30dBody">
+                                <tr><td style="text-align:center;color:#94a3b8">No data</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="card">
@@ -315,6 +373,7 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
     <script>
         let failureChart;
         let usageChart;
+        let pingUsageChart;
         let markerCluster;
 
         // Map Initialization
@@ -461,34 +520,113 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
 
                     if (usageChart) usageChart.destroy();
                     usageChart = new Chart(document.getElementById('usageChart'), {
+                         type: 'bar',
+                         data: {
+                             labels: data.map(d => {
+                                 const date = new Date(d.bucket);
+                                 if (days == 1) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                 if (days == 7) return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.getHours() + ':00';
+                                 return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                             }),
+                             datasets: [{
+                                 label: 'API Requests',
+                                 data: data.map(d => d.count),
+                                 backgroundColor: '#3b82f6',
+                                 borderRadius: 4,
+                                 barPercentage: 0.8,
+                             }]
+                         },
+                         options: {
+                             responsive: true,
+                             maintainAspectRatio: false,
+                             scales: {
+                                 y: {
+                                     beginAtZero: true,
+                                     grid: { color: '#f1f5f9' },
+                                     ticks: { font: { size: 11 } }
+                                 },
+                                 x: {
+                                     grid: { display: false },
+                                     ticks: { 
+                                         font: { size: 10 },
+                                         maxRotation: 45,
+                                         minRotation: 45
+                                     }
+                                 }
+                             },
+                             plugins: {
+                                 legend: { display: false },
+                                 tooltip: {
+                                     backgroundColor: '#1e293b',
+                                     padding: 12,
+                                     titleFont: { size: 14, weight: 'bold' },
+                                     bodyFont: { size: 13 },
+                                     displayColors: false
+                                 }
+                             }
+                         }
+                    });
+                });
+
+            // Fetch ping usage stats
+            fetch('/dashboard/api/ping-usage?days=' + days)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data) data = [];
+
+                    let unitLabel = "Requests per Day";
+                    if (days == 1) unitLabel = "Requests per 5 Minutes";
+                    else if (days == 7) unitLabel = "Requests per Hour";
+
+                    document.getElementById('pingUsageTitle').innerText = "/ping Requests per Version (" + unitLabel + ")";
+
+                    const buckets = [...new Set(data.map(d => d.bucket))].sort();
+                    const versions = [...new Set(data.map(d => d.version))].sort();
+
+                    const datasets = versions.map((version, index) => {
+                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6b7280', '#14b8a6', '#f43f5e'];
+                        const color = colors[index % colors.length];
+
+                        const counts = buckets.map(bucket => {
+                            const match = data.find(d => d.bucket === bucket && d.version === version);
+                            return match ? match.count : 0;
+                        });
+
+                        return {
+                            label: 'v' + version,
+                            data: counts,
+                            backgroundColor: color,
+                            borderRadius: 4,
+                            barPercentage: 0.8,
+                        };
+                    });
+
+                    if (pingUsageChart) pingUsageChart.destroy();
+                    pingUsageChart = new Chart(document.getElementById('pingUsageChart'), {
                         type: 'bar',
                         data: {
-                            labels: data.map(d => {
-                                const date = new Date(d.bucket);
+                            labels: buckets.map(b => {
+                                const date = new Date(b);
                                 if (days == 1) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                                 if (days == 7) return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.getHours() + ':00';
                                 return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
                             }),
-                            datasets: [{
-                                label: 'API Requests',
-                                data: data.map(d => d.count),
-                                backgroundColor: '#3b82f6',
-                                borderRadius: 4,
-                                barPercentage: 0.8,
-                            }]
+                            datasets: datasets
                         },
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
                             scales: {
                                 y: {
+                                    stacked: true,
                                     beginAtZero: true,
                                     grid: { color: '#f1f5f9' },
                                     ticks: { font: { size: 11 } }
                                 },
                                 x: {
+                                    stacked: true,
                                     grid: { display: false },
-                                    ticks: { 
+                                    ticks: {
                                         font: { size: 10 },
                                         maxRotation: 45,
                                         minRotation: 45
@@ -496,17 +634,42 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
                                 }
                             },
                             plugins: {
-                                legend: { display: false },
+                                legend: {
+                                    display: true,
+                                    position: 'top',
+                                    labels: { boxWidth: 12, font: { size: 11 } }
+                                },
                                 tooltip: {
                                     backgroundColor: '#1e293b',
                                     padding: 12,
                                     titleFont: { size: 14, weight: 'bold' },
-                                    bodyFont: { size: 13 },
-                                    displayColors: false
+                                    bodyFont: { size: 13 }
                                 }
                             }
                         }
                     });
+                });
+
+            // Fetch Active Users per Version
+            fetch('/dashboard/api/users-per-version')
+                .then(res => res.json())
+                .then(data => {
+                    const renderTable = (list, elementId) => {
+                        const el = document.getElementById(elementId);
+                        if (!list || list.length === 0) {
+                            el.innerHTML = '<tr><td style="text-align:center;color:#94a3b8">No data</td></tr>';
+                            return;
+                        }
+                        el.innerHTML = list.map(item =>
+                            '<tr>' +
+                                '<td style="padding:6px 8px;">v' + item.version + '</td>' +
+                                '<td style="text-align:right;font-weight:600;padding:6px 8px;">' + item.count.toLocaleString() + '</td>' +
+                            '</tr>'
+                        ).join('');
+                    };
+                    renderTable(data.last_24h, 'users24hBody');
+                    renderTable(data.last_7d, 'users7dBody');
+                    renderTable(data.last_30d, 'users30dBody');
                 });
         }
 
