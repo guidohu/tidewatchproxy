@@ -15,7 +15,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/data/reverse-geocode-client": {
+        "/data/reverse-geocode": {
             "get": {
                 "security": [
                     {
@@ -64,6 +64,94 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ping": {
+            "get": {
+                "description": "Record uuid and version of clients",
+                "tags": [
+                    "ping"
+                ],
+                "summary": "Ping proxy server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Client UUID",
+                        "name": "uuid",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Client Version X.X.X",
+                        "name": "version",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Record uuid and version of clients",
+                "tags": [
+                    "ping"
+                ],
+                "summary": "Ping proxy server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Client UUID",
+                        "name": "uuid",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Client Version X.X.X",
+                        "name": "version",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -497,6 +585,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/models.DenseTidePoint"
                     }
+                },
+                "station": {
+                    "$ref": "#/definitions/models.StationInfo"
                 }
             }
         },
@@ -570,6 +661,26 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "locality": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.StationInfo": {
+            "type": "object",
+            "properties": {
+                "country": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 }
             }

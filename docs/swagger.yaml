@@ -6,6 +6,8 @@ definitions:
         items:
           $ref: '#/definitions/models.DenseTidePoint'
         type: array
+      station:
+        $ref: '#/definitions/models.StationInfo'
     type: object
   models.DenseTidePoint:
     properties:
@@ -55,6 +57,19 @@ definitions:
       locality:
         type: string
     type: object
+  models.StationInfo:
+    properties:
+      country:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      region:
+        type: string
+      type:
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -64,7 +79,7 @@ info:
   title: Tide Watch Proxy API
   version: "1.0"
 paths:
-  /data/reverse-geocode-client:
+  /data/reverse-geocode:
     get:
       description: Get location name from latitude and longitude using BigDataCloud
       parameters:
@@ -102,6 +117,65 @@ paths:
       summary: Reverse Geocode
       tags:
       - Geocoding
+  /ping:
+    get:
+      description: Record uuid and version of clients
+      parameters:
+      - description: Client UUID
+        in: query
+        name: uuid
+        required: true
+        type: string
+      - description: Client Version X.X.X
+        in: query
+        name: version
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Ping proxy server
+      tags:
+      - ping
+    post:
+      description: Record uuid and version of clients
+      parameters:
+      - description: Client UUID
+        in: query
+        name: uuid
+        required: true
+        type: string
+      - description: Client Version X.X.X
+        in: query
+        name: version
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Ping proxy server
+      tags:
+      - ping
   /tides/extremes:
     get:
       description: Fetch tide extremes (high/low) from OpenWaters API

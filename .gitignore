@@ -41,3 +41,7 @@ tide_watch_proxy
 docker-compose-testing.yml
 test_metrics.db-shm
 test_metrics.db-wal
+metrics.db
+metrics.db-shm
+.gitignore
+metrics.db-wal
