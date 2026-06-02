@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -179,5 +182,144 @@ func TestHandlePing_Validation(t *testing.T) {
 	// Since HandlePing will call h.locationStore.LogPing, we'll verify it returns 400 for errors beforehand.
 }
 
-// More tests could be added here by mocking the http.DefaultClient
-// or using a library like 'gherkin' or 'sqlmock' / 'redismock'.
+type mockRoundTripper struct {
+	roundTripFunc func(req *http.Request) (*http.Response, error)
+}
+
+func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return m.roundTripFunc(req)
+}
+
+func TestHandleOpenWaters_Parsing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
+	r := gin.Default()
+	r.GET("/tides/timeline", h.HandleOpenWatersTimeline)
+	r.GET("/tides/extremes", h.HandleOpenWatersExtremes)
+
+	// Save original transport
+	origTransport := http.DefaultClient.Transport
+	defer func() {
+		http.DefaultClient.Transport = origTransport
+	}()
+
+	timelineJSON := `{
+		"datum": "MLLW",
+		"units": "meters",
+		"station": {
+			"id": "8722588",
+			"name": "Key West",
+			"region": "Florida",
+			"country": "USA",
+			"continent": "North America",
+			"timezone": "America/New_York",
+			"type": "reference",
+			"latitude": 24.55,
+			"longitude": -81.8
+		},
+		"distance": 120.5,
+		"timeline": [
+			{
+				"time": "2026-06-02T10:00:00Z",
+				"level": 0.45
+			}
+		]
+	}`
+
+	extremesJSON := `{
+		"datum": "MLLW",
+		"units": "meters",
+		"station": {
+			"id": "8722588",
+			"name": "Key West",
+			"region": "Florida",
+			"country": "USA",
+			"continent": "North America",
+			"timezone": "America/New_York",
+			"type": "reference",
+			"latitude": 24.55,
+			"longitude": -81.8
+		},
+		"distance": 120.5,
+		"extremes": [
+			{
+				"time": "2026-06-02T10:00:00Z",
+				"level": 0.45,
+				"high": true
+			}
+		]
+	}`
+
+	http.DefaultClient.Transport = &mockRoundTripper{
+		roundTripFunc: func(req *http.Request) (*http.Response, error) {
+			var respStr string
+			if strings.Contains(req.URL.Path, "/timeline") {
+				respStr = timelineJSON
+			} else if strings.Contains(req.URL.Path, "/extremes") {
+				respStr = extremesJSON
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(respStr)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+
+	// 1. Test timeline parsing
+	req, _ := http.NewRequest("GET", "/tides/timeline?latitude=24.55&longitude=-81.8&datum=MLLW", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %v", w.Code)
+	}
+
+	var timelineResp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &timelineResp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	station, ok := timelineResp["station"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Station field missing or invalid in timeline response")
+	}
+
+	if station["id"] != "8722588" || station["name"] != "Key West" || station["region"] != "Florida" || station["country"] != "USA" || station["type"] != "reference" {
+		t.Errorf("Unexpected station fields: %v", station)
+	}
+
+	// Ensure filtered out fields are NOT present
+	if _, exists := station["latitude"]; exists {
+		t.Errorf("Latitude field should have been filtered out")
+	}
+	if _, exists := station["longitude"]; exists {
+		t.Errorf("Longitude field should have been filtered out")
+	}
+	if _, exists := station["timezone"]; exists {
+		t.Errorf("Timezone field should have been filtered out")
+	}
+
+	// 2. Test extremes parsing
+	req, _ = http.NewRequest("GET", "/tides/extremes?latitude=24.55&longitude=-81.8&datum=MLLW", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %v", w.Code)
+	}
+
+	var extremesResp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &extremesResp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	station, ok = extremesResp["station"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Station field missing or invalid in extremes response")
+	}
+
+	if station["id"] != "8722588" || station["name"] != "Key West" || station["region"] != "Florida" || station["country"] != "USA" || station["type"] != "reference" {
+		t.Errorf("Unexpected station fields: %v", station)
+	}
+}

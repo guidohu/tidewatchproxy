@@ -95,6 +95,7 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	}
 
 	var raw struct {
+		Station  *models.StationInfo `json:"station"`
 		Extremes []struct {
 			Time  string  `json:"time"`
 			Level float64 `json:"level"`
@@ -108,7 +109,10 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 		return
 	}
 
-	dense := models.DenseTideData{Data: make([]models.DenseTidePoint, 0)}
+	dense := models.DenseTideData{
+		Data:    make([]models.DenseTidePoint, 0),
+		Station: raw.Station,
+	}
 	for _, e := range raw.Extremes {
 		t, _ := time.Parse(time.RFC3339, e.Time)
 		tType := "low"
@@ -198,6 +202,7 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 	}
 
 	var raw struct {
+		Station  *models.StationInfo `json:"station"`
 		Timeline []struct {
 			Time  string  `json:"time"`
 			Level float64 `json:"level"`
@@ -210,7 +215,10 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 		return
 	}
 
-	dense := models.DenseTideData{Data: make([]models.DenseTidePoint, 0)}
+	dense := models.DenseTideData{
+		Data:    make([]models.DenseTidePoint, 0),
+		Station: raw.Station,
+	}
 	var lastProcessedHour time.Time
 	for _, e := range raw.Timeline {
 		t, _ := time.Parse(time.RFC3339, e.Time)

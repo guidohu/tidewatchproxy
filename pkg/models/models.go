@@ -24,11 +24,20 @@ type DenseWeatherPoint struct {
 }
 
 type DenseTideData struct {
-	Data []DenseTidePoint `json:"data"`
+	Data    []DenseTidePoint `json:"data"`
+	Station *StationInfo     `json:"station,omitempty"`
 }
 
 type DenseTidePoint struct {
 	Timestamp int64   `json:"ts"`
 	Height    float64 `json:"h"`
 	Type      string  `json:"t,omitempty"`
+}
+
+type StationInfo struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Region  string `json:"region,omitempty"`
+	Country string `json:"country,omitempty"`
+	Type    string `json:"type,omitempty"`
 }
