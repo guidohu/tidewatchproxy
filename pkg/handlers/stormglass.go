@@ -311,7 +311,7 @@ func (h *Handler) HandleTides(c *gin.Context) {
 		t, _ := time.Parse(time.RFC3339, d.Time)
 		dense.Data = append(dense.Data, models.DenseTidePoint{
 			Timestamp: t.Unix(),
-			Height:    d.Height,
+			Height:    models.TideHeight(d.Height),
 			Type:      d.Type,
 		})
 	}
@@ -429,7 +429,7 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 		t, _ := time.Parse(time.RFC3339, d.Time)
 		dense.Data = append(dense.Data, models.DenseTidePoint{
 			Timestamp: t.Unix(),
-			Height:    d.Sg,
+			Height:    models.TideHeight(d.Sg),
 		})
 	}
 

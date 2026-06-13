@@ -121,7 +121,7 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 		}
 		dense.Data = append(dense.Data, models.DenseTidePoint{
 			Timestamp: t.Unix(),
-			Height:    e.Level,
+			Height:    models.TideHeight(e.Level),
 			Type:      tType,
 		})
 	}
@@ -227,7 +227,7 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 			if !hour.Equal(lastProcessedHour) {
 				dense.Data = append(dense.Data, models.DenseTidePoint{
 					Timestamp: t.Unix(),
-					Height:    e.Level,
+					Height:    models.TideHeight(e.Level),
 				})
 				lastProcessedHour = hour
 			}
