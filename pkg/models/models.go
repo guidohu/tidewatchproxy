@@ -58,7 +58,7 @@ func (h *TideHeight) UnmarshalJSON(data []byte) error {
 }
 
 type StationInfo struct {
-	ID      string `json:"id"`
+	ID      string `json:"id,omitempty"`
 	Name    string `json:"name"`
 	Region  string `json:"region,omitempty"`
 	Country string `json:"country,omitempty"`

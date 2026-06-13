@@ -285,8 +285,18 @@ func TestHandleOpenWaters_Parsing(t *testing.T) {
 		t.Fatalf("Station field missing or invalid in timeline response")
 	}
 
-	if station["id"] != "8722588" || station["name"] != "Key West" || station["region"] != "Florida" || station["country"] != "USA" || station["type"] != "reference" {
+	if station["name"] != "Key West" || station["country"] != "USA" {
 		t.Errorf("Unexpected station fields: %v", station)
+	}
+
+	if _, exists := station["id"]; exists {
+		t.Errorf("id field should have been filtered out")
+	}
+	if _, exists := station["region"]; exists {
+		t.Errorf("region field should have been filtered out")
+	}
+	if _, exists := station["type"]; exists {
+		t.Errorf("type field should have been filtered out")
 	}
 
 	// Ensure filtered out fields are NOT present

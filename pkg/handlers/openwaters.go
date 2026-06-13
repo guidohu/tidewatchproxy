@@ -215,6 +215,12 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 		return
 	}
 
+	if raw.Station != nil {
+		raw.Station.ID = ""
+		raw.Station.Region = ""
+		raw.Station.Type = ""
+	}
+
 	dense := models.DenseTideData{
 		Data:    make([]models.DenseTidePoint, 0),
 		Station: raw.Station,
