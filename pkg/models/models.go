@@ -1,5 +1,10 @@
 package models
 
+import (
+	"fmt"
+	"strconv"
+)
+
 type LocationResponse struct {
 	Locality    string `json:"locality,omitempty"`
 	City        string `json:"city,omitempty"`
@@ -29,9 +34,27 @@ type DenseTideData struct {
 }
 
 type DenseTidePoint struct {
-	Timestamp int64   `json:"ts"`
-	Height    float64 `json:"h"`
-	Type      string  `json:"t,omitempty"`
+	Timestamp int64      `json:"ts"`
+	Height    TideHeight `json:"h"`
+	Type      string     `json:"t,omitempty"`
+}
+
+// TideHeight represents a float64 value that marshals to JSON with exactly 2 decimal places.
+type TideHeight float64
+
+// MarshalJSON formats TideHeight with exactly 2 decimal places.
+func (h TideHeight) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("%.2f", h)), nil
+}
+
+// UnmarshalJSON parses a JSON float into TideHeight.
+func (h *TideHeight) UnmarshalJSON(data []byte) error {
+	val, err := strconv.ParseFloat(string(data), 64)
+	if err != nil {
+		return err
+	}
+	*h = TideHeight(val)
+	return nil
 }
 
 type StationInfo struct {
