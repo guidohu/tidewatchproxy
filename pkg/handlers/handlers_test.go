@@ -333,3 +333,81 @@ func TestHandleOpenWaters_Parsing(t *testing.T) {
 		t.Errorf("Unexpected station fields: %v", station)
 	}
 }
+
+func TestStormglassInvalidKeyCaching(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Save original transport
+	origTransport := http.DefaultClient.Transport
+	defer func() {
+		http.DefaultClient.Transport = origTransport
+	}()
+
+	var callCount int
+
+	// Mock Stormglass returning invalid key error
+	http.DefaultClient.Transport = &mockRoundTripper{
+		roundTripFunc: func(req *http.Request) (*http.Response, error) {
+			callCount++
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(`{"errors":{"key":"API key is invalid"}}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+
+	// 1. Test invalid key caching using local memory cache (redisClient is nil)
+	h := NewHandler(nil, "default-key", "", false, nil, false, nil)
+	r := gin.Default()
+	r.GET("/weather/point", func(c *gin.Context) {
+		c.Set("api_key", "bad-key-1")
+		h.HandleWeather(c)
+	})
+
+	// First request -> Should call upstream (mock transport)
+	req, _ := http.NewRequest("GET", "/weather/point?lat=10&lng=20&params=swellHeight", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Expected first request status 403, got %v", w.Code)
+	}
+	if w.Body.String() != `{"errors":{"key":"API key is invalid"}}` {
+		t.Errorf("Expected first response body to be direct upstream error, got `%s`", w.Body.String())
+	}
+	if callCount != 1 {
+		t.Errorf("Expected upstream to be called exactly 1 time, called %d times", callCount)
+	}
+
+	// Second request with same key -> Should not call upstream (cached as invalid)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Expected second request status 403, got %v", w.Code)
+	}
+	if w.Body.String() != `{"errors":{"key":"API key is invalid (cached)"}}` {
+		t.Errorf("Expected second response body to be cached error, got `%s`", w.Body.String())
+	}
+	if callCount != 1 {
+		t.Errorf("Expected upstream to NOT be called a second time (cached), call count: %d", callCount)
+	}
+
+	// Request with a different key -> Should call upstream
+	r2 := gin.Default()
+	r2.GET("/weather/point", func(c *gin.Context) {
+		c.Set("api_key", "bad-key-2")
+		h.HandleWeather(c)
+	})
+	req2, _ := http.NewRequest("GET", "/weather/point?lat=10&lng=20&params=swellHeight", nil)
+	w2 := httptest.NewRecorder()
+	r2.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusForbidden {
+		t.Errorf("Expected request with different key status 403, got %v", w2.Code)
+	}
+	if callCount != 2 {
+		t.Errorf("Expected upstream to be called for different key, call count: %d", callCount)
+	}
+}

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"tide_watch_proxy/pkg/store"
@@ -25,6 +27,8 @@ type Handler struct {
 	debug              bool
 	ctx                context.Context
 	locationStore      *store.LocationStore
+	invalidKeysMutex   sync.RWMutex
+	invalidKeys        map[string]time.Time
 }
 
 func NewHandler(redisClient *redis.Client, stormglassAPIKey string, bigDataCloudAPIKey string, useCache bool, customLocations map[string]string, debug bool, locationStore *store.LocationStore) *Handler {
@@ -37,6 +41,7 @@ func NewHandler(redisClient *redis.Client, stormglassAPIKey string, bigDataCloud
 		debug:              debug,
 		ctx:                context.Background(),
 		locationStore:      locationStore,
+		invalidKeys:        make(map[string]time.Time),
 	}
 }
 
