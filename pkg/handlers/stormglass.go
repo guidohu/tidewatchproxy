@@ -33,6 +33,10 @@ import (
 // @Router /v2/weather/point [get]
 func (h *Handler) HandleWeather(c *gin.Context) {
 	c.Set("backend", "Stormglass")
+	apiKey, ok := h.checkStormglassAPIKey(c)
+	if !ok {
+		return
+	}
 	lat := c.Query("lat")
 	lng := c.Query("lng")
 	params := c.Query("params")
@@ -92,7 +96,6 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 	}
 
 	// Fetch from Stormglass
-	apiKey := c.GetString("api_key")
 	url := fmt.Sprintf("%s/v2/weather/point?lat=%.4f&lng=%.4f&params=%s&source=%s&start=%d&end=%d",
 		StormglassBaseURL, latVal, lngVal, params, source, startTime.Unix(), endTime.Unix())
 
@@ -111,6 +114,9 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 	util.LogStormglass(h.debug, "GET", url, body)
 
 	if resp.StatusCode != http.StatusOK {
+		if strings.TrimSpace(string(body)) == `{"errors":{"key":"API key is invalid"}}` {
+			h.markAPIKeyInvalid(apiKey)
+		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			c.Set("error_type", "Stormglass Auth Error")
 		} else if resp.StatusCode == http.StatusTooManyRequests {
@@ -223,6 +229,10 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 // @Router /v2/tide/extremes/point [get]
 func (h *Handler) HandleTides(c *gin.Context) {
 	c.Set("backend", "Stormglass")
+	apiKey, ok := h.checkStormglassAPIKey(c)
+	if !ok {
+		return
+	}
 	lat := c.Query("lat")
 	lng := c.Query("lng")
 	start := c.Query("start")
@@ -258,7 +268,6 @@ func (h *Handler) HandleTides(c *gin.Context) {
 		}
 	}
 
-	apiKey := c.GetString("api_key")
 	url := fmt.Sprintf("%s/v2/tide/extremes/point?lat=%s&lng=%s&start=%d&end=%d",
 		StormglassBaseURL, lat, lng, startTime.Unix(), endTime.Unix())
 	if datum != "" {
@@ -280,6 +289,9 @@ func (h *Handler) HandleTides(c *gin.Context) {
 	util.LogStormglass(h.debug, "GET", url, body)
 
 	if resp.StatusCode != http.StatusOK {
+		if strings.TrimSpace(string(body)) == `{"errors":{"key":"API key is invalid"}}` {
+			h.markAPIKeyInvalid(apiKey)
+		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			c.Set("error_type", "Stormglass Auth Error")
 		} else if resp.StatusCode == http.StatusTooManyRequests {
@@ -342,6 +354,10 @@ func (h *Handler) HandleTides(c *gin.Context) {
 // @Router /v2/tide/sea-level/point [get]
 func (h *Handler) HandleSeaLevel(c *gin.Context) {
 	c.Set("backend", "Stormglass")
+	apiKey, ok := h.checkStormglassAPIKey(c)
+	if !ok {
+		return
+	}
 	lat := c.Query("lat")
 	lng := c.Query("lng")
 	start := c.Query("start")
@@ -377,7 +393,6 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 		}
 	}
 
-	apiKey := c.GetString("api_key")
 	url := fmt.Sprintf("%s/v2/tide/sea-level/point?lat=%.4f&lng=%.4f&start=%d&end=%d",
 		StormglassBaseURL, latVal, lngVal, startTime.Unix(), endTime.Unix())
 	if datum != "" {
@@ -399,6 +414,9 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 	util.LogStormglass(h.debug, "GET", url, body)
 
 	if resp.StatusCode != http.StatusOK {
+		if strings.TrimSpace(string(body)) == `{"errors":{"key":"API key is invalid"}}` {
+			h.markAPIKeyInvalid(apiKey)
+		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			c.Set("error_type", "Stormglass Auth Error")
 		} else if resp.StatusCode == http.StatusTooManyRequests {
@@ -440,4 +458,67 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 
 	c.Header("X-Cache", "MISS")
 	c.JSON(http.StatusOK, dense)
+}
+
+func (h *Handler) isAPIKeyInvalid(apiKey string) bool {
+	if apiKey == "" {
+		return false
+	}
+
+	// 1. Check Redis first if enabled
+	if h.useCache && h.redisClient != nil {
+		cacheKey := "stormglass:invalid_key:" + apiKey
+		if val, err := h.redisClient.Get(h.ctx, cacheKey).Result(); err == nil && val == "invalid" {
+			return true
+		}
+	}
+
+	// 2. Check local in-memory cache
+	h.invalidKeysMutex.RLock()
+	expiry, exists := h.invalidKeys[apiKey]
+	h.invalidKeysMutex.RUnlock()
+
+	if exists {
+		if time.Now().Before(expiry) {
+			return true
+		}
+		// Clean up expired key
+		h.invalidKeysMutex.Lock()
+		delete(h.invalidKeys, apiKey)
+		h.invalidKeysMutex.Unlock()
+	}
+
+	return false
+}
+
+func (h *Handler) markAPIKeyInvalid(apiKey string) {
+	if apiKey == "" {
+		return
+	}
+	duration := 12 * time.Hour
+
+	// 1. Save in Redis if enabled
+	if h.useCache && h.redisClient != nil {
+		cacheKey := "stormglass:invalid_key:" + apiKey
+		h.redisClient.Set(h.ctx, cacheKey, "invalid", duration)
+	}
+
+	// 2. Save in local in-memory cache
+	h.invalidKeysMutex.Lock()
+	if h.invalidKeys == nil {
+		h.invalidKeys = make(map[string]time.Time)
+	}
+	h.invalidKeys[apiKey] = time.Now().Add(duration)
+	h.invalidKeysMutex.Unlock()
+}
+
+func (h *Handler) checkStormglassAPIKey(c *gin.Context) (string, bool) {
+	apiKey := c.GetString("api_key")
+	if h.isAPIKeyInvalid(apiKey) {
+		c.Set("error_type", "Stormglass Auth Error")
+		c.Set("upstream_response", `{"errors":{"key":"API key is invalid (cached)"}}`)
+		c.Data(http.StatusForbidden, "application/json", []byte(`{"errors":{"key":"API key is invalid (cached)"}}`))
+		return "", false
+	}
+	return apiKey, true
 }
