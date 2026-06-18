@@ -61,11 +61,11 @@ func LocationLogger(s *store.LocationStore) gin.HandlerFunc {
 				Path:             c.Request.URL.Path,
 				Query:            c.Request.URL.RawQuery,
 				StatusCode:       status,
-				RequestBody:  string(reqBody),
-				ResponseBody: blw.body.String(),
+				RequestBody:      string(reqBody),
+				ResponseBody:     blw.body.String(),
 				UpstreamResponse: upstreamResp,
-				Backend:      backendStr,
-				ErrorType:    errorType,
+				Backend:          backendStr,
+				ErrorType:        errorType,
 			}
 
 			// Log to database (handled asynchronously by store)
