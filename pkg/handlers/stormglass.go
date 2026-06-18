@@ -516,7 +516,6 @@ func (h *Handler) checkStormglassAPIKey(c *gin.Context) (string, bool) {
 	apiKey := c.GetString("api_key")
 	if h.isAPIKeyInvalid(apiKey) {
 		c.Set("error_type", "Stormglass Auth Error")
-		c.Set("upstream_response", `{"errors":{"key":"API key is invalid (cached)"}}`)
 		c.Data(http.StatusForbidden, "application/json", []byte(`{"errors":{"key":"API key is invalid (cached)"}}`))
 		return "", false
 	}
