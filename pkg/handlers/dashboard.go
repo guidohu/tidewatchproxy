@@ -116,17 +116,24 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: #f5f7fa;
             margin: 0;
-            padding: 20px;
+            padding: 0 20px 20px 20px;
         }
         .container {
             max-width: 1400px;
             margin: 0 auto;
         }
         .header {
+            position: -webkit-sticky;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            background-color: #f5f7fa;
+            padding: 20px 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
+            border-bottom: 1px solid #e2e8f0;
         }
         .card {
             background: white;
@@ -390,6 +397,7 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
 
         function updateDashboard() {
             const days = document.getElementById('timeframe').value;
+            localStorage.setItem('timeframe', days);
             
             // Clear markers
             markerCluster.clearLayers();
@@ -663,6 +671,10 @@ func (h *DashboardHandler) HandleDashboard(c *gin.Context) {
         }
 
         // Initial load
+        const savedTimeframe = localStorage.getItem('timeframe');
+        if (savedTimeframe !== null) {
+            document.getElementById('timeframe').value = savedTimeframe;
+        }
         updateDashboard();
     </script>
 </body>
