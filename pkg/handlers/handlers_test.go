@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-redis/redis/v8"
 
 	"github.com/gin-gonic/gin"
 )
@@ -409,5 +412,83 @@ func TestStormglassInvalidKeyCaching(t *testing.T) {
 	}
 	if callCount != 2 {
 		t.Errorf("Expected upstream to be called for different key, call count: %d", callCount)
+	}
+}
+
+func TestMarkAPIKeyInvalid_Memory(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
+
+	// Test 1: Empty string should not be marked
+	h.markAPIKeyInvalid("")
+	if h.isAPIKeyInvalid("") {
+		t.Errorf("Expected empty API key to not be marked invalid")
+	}
+
+	// Test 2: Valid string should be marked and identified
+	validKey := "test-key-memory"
+	h.markAPIKeyInvalid(validKey)
+	if !h.isAPIKeyInvalid(validKey) {
+		t.Errorf("Expected API key to be marked invalid")
+	}
+
+	// Test 3: Expired key should be cleaned up and return false
+	h.invalidKeysMutex.Lock()
+	h.invalidKeys[validKey] = time.Now().Add(-1 * time.Hour)
+	h.invalidKeysMutex.Unlock()
+
+	if h.isAPIKeyInvalid(validKey) {
+		t.Errorf("Expected expired API key to not be marked invalid")
+	}
+}
+
+func TestMarkAPIKeyInvalid_Redis(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Start miniredis
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when starting miniredis", err)
+	}
+	defer mr.Close()
+
+	// Initialize redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: mr.Addr(),
+	})
+
+	h := NewHandler(redisClient, "", "", true, nil, false, nil)
+
+	// Test 1: Empty string should not be marked
+	h.markAPIKeyInvalid("")
+	if h.isAPIKeyInvalid("") {
+		t.Errorf("Expected empty API key to not be marked invalid")
+	}
+
+	// Test 2: Valid string should be marked and identified
+	validKey := "test-key-redis"
+	h.markAPIKeyInvalid(validKey)
+	if !h.isAPIKeyInvalid(validKey) {
+		t.Errorf("Expected API key to be marked invalid")
+	}
+
+	// Test 3: Unmarked key should not be identified as invalid
+	unmarkedKey := "unmarked-key-redis"
+	if h.isAPIKeyInvalid(unmarkedKey) {
+		t.Errorf("Expected unmarked API key to not be marked invalid")
+	}
+
+	// Test 4: Expired key in Redis
+	expiredKey := "expired-key-redis"
+	h.markAPIKeyInvalid(expiredKey)
+	mr.FastForward(24 * time.Hour) // Fast forward time to expire the key
+
+	// Fast forward local memory cache manually
+	h.invalidKeysMutex.Lock()
+	h.invalidKeys[expiredKey] = time.Now().Add(-1 * time.Hour)
+	h.invalidKeysMutex.Unlock()
+
+	if h.isAPIKeyInvalid(expiredKey) {
+		t.Errorf("Expected expired API key to not be marked invalid")
 	}
 }
