@@ -8,12 +8,6 @@ import (
 	"time"
 )
 
-func GetEnv(key, fallback string) string {
-	// Note: We might want to pass this in from main, but for now we'll keep it here
-	// and maybe move it to main later. Actually, helpers shouldn't depend on os env if possible.
-	return fallback
-}
-
 func Round(val float64, precision int) float64 {
 	ratio := math.Pow(10, float64(precision))
 	return math.Round(val*ratio) / ratio
