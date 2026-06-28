@@ -12,12 +12,12 @@ import (
 )
 
 type LocationStore struct {
-	db              *sql.DB
-	requestChan     chan requestEntry
-	locationChan    chan locationEntry
-	errorChan       chan ErrorLog
-	pingChan        chan pingEntry
-	stopChan        chan struct{}
+	db           *sql.DB
+	requestChan  chan requestEntry
+	locationChan chan locationEntry
+	errorChan    chan ErrorLog
+	pingChan     chan pingEntry
+	stopChan     chan struct{}
 
 	// Prepared statements
 	stmtRequest     *sql.Stmt
