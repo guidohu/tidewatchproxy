@@ -198,9 +198,9 @@ func TestHandleOpenWaters_Parsing(t *testing.T) {
 	r.GET("/tides/extremes", h.HandleOpenWatersExtremes)
 
 	// Save original transport
-	origTransport := http.DefaultClient.Transport
+	origTransport := httpClient.Transport
 	defer func() {
-		http.DefaultClient.Transport = origTransport
+		httpClient.Transport = origTransport
 	}()
 
 	timelineJSON := `{
@@ -250,7 +250,7 @@ func TestHandleOpenWaters_Parsing(t *testing.T) {
 		]
 	}`
 
-	http.DefaultClient.Transport = &mockRoundTripper{
+	httpClient.Transport = &mockRoundTripper{
 		roundTripFunc: func(req *http.Request) (*http.Response, error) {
 			var respStr string
 			if strings.Contains(req.URL.Path, "/timeline") {
@@ -338,15 +338,15 @@ func TestStormglassInvalidKeyCaching(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	// Save original transport
-	origTransport := http.DefaultClient.Transport
+	origTransport := httpClient.Transport
 	defer func() {
-		http.DefaultClient.Transport = origTransport
+		httpClient.Transport = origTransport
 	}()
 
 	var callCount int
 
 	// Mock Stormglass returning invalid key error
-	http.DefaultClient.Transport = &mockRoundTripper{
+	httpClient.Transport = &mockRoundTripper{
 		roundTripFunc: func(req *http.Request) (*http.Response, error) {
 			callCount++
 			return &http.Response{

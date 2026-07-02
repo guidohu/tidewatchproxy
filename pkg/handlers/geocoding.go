@@ -76,7 +76,7 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 	url := fmt.Sprintf("%s/data/reverse-geocode?latitude=%s&longitude=%s&localityLanguage=en&key=%s",
 		BigDataCloudBaseURL, latStr, lngStr, h.bigDataCloudAPIKey)
 
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		c.Set("error_type", "BigDataCloud Connection Error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from BigDataCloud"})
