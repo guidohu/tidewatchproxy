@@ -72,7 +72,7 @@ func LocationLogger(s *store.LocationStore) gin.HandlerFunc {
 			s.LogError(errLog)
 
 			// Log to command line
-			log.Printf("[ERROR] %s %s | Status: %d | Backend: %s | Error: %s", 
+			log.Printf("[ERROR] %s %s | Status: %d | Backend: %s | Error: %s",
 				errLog.Method, errLog.Path, errLog.StatusCode, errLog.Backend, errLog.ErrorType)
 			if errLog.RequestBody != "" {
 				log.Printf("[ERROR] Request Body: %s", errLog.RequestBody)
