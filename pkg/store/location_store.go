@@ -234,6 +234,10 @@ func NewLocationStore(dbPath string) (*LocationStore, error) {
 	return store, nil
 }
 
+func (s *LocationStore) DB() *sql.DB {
+	return s.db
+}
+
 func (s *LocationStore) Close() error {
 	close(s.stopChan)
 	s.stmtRequest.Close()
