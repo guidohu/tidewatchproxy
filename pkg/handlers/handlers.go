@@ -2,12 +2,17 @@ package handlers
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	"tide_watch_proxy/pkg/store"
 )
+
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
 
 type Config struct {
 	RedisClient      *redis.Client

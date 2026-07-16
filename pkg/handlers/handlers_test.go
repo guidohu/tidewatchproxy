@@ -7,6 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-redis/redis/v8"
 
 	"github.com/gin-gonic/gin"
 )
@@ -198,9 +202,9 @@ func TestHandleOpenWaters_Parsing(t *testing.T) {
 	r.GET("/tides/extremes", h.HandleOpenWatersExtremes)
 
 	// Save original transport
-	origTransport := http.DefaultClient.Transport
+	origTransport := httpClient.Transport
 	defer func() {
-		http.DefaultClient.Transport = origTransport
+		httpClient.Transport = origTransport
 	}()
 
 	timelineJSON := `{
@@ -250,7 +254,7 @@ func TestHandleOpenWaters_Parsing(t *testing.T) {
 		]
 	}`
 
-	http.DefaultClient.Transport = &mockRoundTripper{
+	httpClient.Transport = &mockRoundTripper{
 		roundTripFunc: func(req *http.Request) (*http.Response, error) {
 			var respStr string
 			if strings.Contains(req.URL.Path, "/timeline") {
@@ -338,15 +342,15 @@ func TestStormglassInvalidKeyCaching(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	// Save original transport
-	origTransport := http.DefaultClient.Transport
+	origTransport := httpClient.Transport
 	defer func() {
-		http.DefaultClient.Transport = origTransport
+		httpClient.Transport = origTransport
 	}()
 
 	var callCount int
 
 	// Mock Stormglass returning invalid key error
-	http.DefaultClient.Transport = &mockRoundTripper{
+	httpClient.Transport = &mockRoundTripper{
 		roundTripFunc: func(req *http.Request) (*http.Response, error) {
 			callCount++
 			return &http.Response{
@@ -412,13 +416,91 @@ func TestStormglassInvalidKeyCaching(t *testing.T) {
 	}
 }
 
+func TestMarkAPIKeyInvalid_Memory(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewHandler(nil, "", "", false, nil, false, nil)
+
+	// Test 1: Empty string should not be marked
+	h.markAPIKeyInvalid("")
+	if h.isAPIKeyInvalid("") {
+		t.Errorf("Expected empty API key to not be marked invalid")
+	}
+
+	// Test 2: Valid string should be marked and identified
+	validKey := "test-key-memory"
+	h.markAPIKeyInvalid(validKey)
+	if !h.isAPIKeyInvalid(validKey) {
+		t.Errorf("Expected API key to be marked invalid")
+	}
+
+	// Test 3: Expired key should be cleaned up and return false
+	h.invalidKeysMutex.Lock()
+	h.invalidKeys[validKey] = time.Now().Add(-1 * time.Hour)
+	h.invalidKeysMutex.Unlock()
+
+	if h.isAPIKeyInvalid(validKey) {
+		t.Errorf("Expected expired API key to not be marked invalid")
+	}
+}
+
+func TestMarkAPIKeyInvalid_Redis(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Start miniredis
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when starting miniredis", err)
+	}
+	defer mr.Close()
+
+	// Initialize redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: mr.Addr(),
+	})
+
+	h := NewHandler(redisClient, "", "", true, nil, false, nil)
+
+	// Test 1: Empty string should not be marked
+	h.markAPIKeyInvalid("")
+	if h.isAPIKeyInvalid("") {
+		t.Errorf("Expected empty API key to not be marked invalid")
+	}
+
+	// Test 2: Valid string should be marked and identified
+	validKey := "test-key-redis"
+	h.markAPIKeyInvalid(validKey)
+	if !h.isAPIKeyInvalid(validKey) {
+		t.Errorf("Expected API key to be marked invalid")
+	}
+
+	// Test 3: Unmarked key should not be identified as invalid
+	unmarkedKey := "unmarked-key-redis"
+	if h.isAPIKeyInvalid(unmarkedKey) {
+		t.Errorf("Expected unmarked API key to not be marked invalid")
+	}
+
+	// Test 4: Expired key in Redis
+	expiredKey := "expired-key-redis"
+	h.markAPIKeyInvalid(expiredKey)
+	mr.FastForward(24 * time.Hour) // Fast forward time to expire the key
+
+	// Fast forward local memory cache manually
+	h.invalidKeysMutex.Lock()
+	h.invalidKeys[expiredKey] = time.Now().Add(-1 * time.Hour)
+	h.invalidKeysMutex.Unlock()
+
+	if h.isAPIKeyInvalid(expiredKey) {
+		t.Errorf("Expected expired API key to not be marked invalid")
+	}
+}
+
 func TestStormglassQuotaExceededCaching(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	// Save original transport
-	origTransport := http.DefaultClient.Transport
+	origTransport := httpClient.Transport
 	defer func() {
-		http.DefaultClient.Transport = origTransport
+		httpClient.Transport = origTransport
 	}()
 
 	const quotaBody = `{"errors":{"key":"API quota exceeded"},"meta":{"dailyQuota":10,"requestCount":41}}`
@@ -426,7 +508,7 @@ func TestStormglassQuotaExceededCaching(t *testing.T) {
 	var callCount int
 
 	// Mock Stormglass returning a quota-exceeded error
-	http.DefaultClient.Transport = &mockRoundTripper{
+	httpClient.Transport = &mockRoundTripper{
 		roundTripFunc: func(req *http.Request) (*http.Response, error) {
 			callCount++
 			return &http.Response{
