@@ -51,16 +51,25 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 	lng := lngVal
 	key := fmt.Sprintf("%.2f,%.2f", util.Round(lat, 2), util.Round(lng, 2))
 
+	cacheKey := "geocode:" + key
+
 	// Check CSV first - this always works, regardless of useCache flag
 	if name, ok := h.customLocations[key]; ok {
 		log.Printf("CSV Match: Found custom location '%s' for key %s", name, key)
 		c.Set("is_cache_hit", true)
-		c.JSON(http.StatusOK, models.LocationResponse{Locality: name})
+		resp := models.LocationResponse{Locality: name}
+		// Write through to Redis so custom locations show up in the dashboard
+		// cache table; the entry is never read for serving since the CSV is
+		// checked first.
+		if h.useCache {
+			jsonData, _ := json.Marshal(resp)
+			h.redisClient.Set(h.ctx, cacheKey, jsonData, 30*24*time.Hour)
+		}
+		c.JSON(http.StatusOK, resp)
 		return
 	}
 
 	// Check Redis cache if enabled
-	cacheKey := "geocode:" + key
 	if h.useCache {
 		if val, err := h.redisClient.Get(h.ctx, cacheKey).Result(); err == nil {
 			c.Header("X-Cache", "HIT")

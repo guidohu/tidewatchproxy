@@ -12,6 +12,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-redis/redis/v8"
 
+	"tide_watch_proxy/pkg/models"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -654,6 +656,70 @@ func TestOpenWatersCaching(t *testing.T) {
 
 	if callCount != 2 {
 		t.Errorf("Expected upstream to be called for different coordinates, call count: %d", callCount)
+	}
+}
+
+func TestHandleReverseGeocode_CustomLocationWriteThrough(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when starting miniredis", err)
+	}
+	defer mr.Close()
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: mr.Addr(),
+	})
+
+	customLocations := map[string]string{"-8.65,115.12": "Pererenan"}
+	h := NewHandler(redisClient, "", "", true, customLocations, false, nil)
+
+	r := gin.Default()
+	r.GET("/geocoding", h.HandleReverseGeocode)
+
+	req, _ := http.NewRequest("GET", "/geocoding?latitude=-8.652125&longitude=115.121654", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %v", w.Code)
+	}
+	var resp models.LocationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	if resp.Locality != "Pererenan" {
+		t.Errorf("Expected locality 'Pererenan', got '%s'", resp.Locality)
+	}
+
+	// CSV match must be written through to Redis so it appears in the dashboard cache table
+	val, err := mr.Get("geocode:-8.65,115.12")
+	if err != nil {
+		t.Fatalf("Expected geocode cache entry for custom location, got error: %v", err)
+	}
+	var cached models.LocationResponse
+	if err := json.Unmarshal([]byte(val), &cached); err != nil {
+		t.Fatalf("Failed to parse cached entry: %v", err)
+	}
+	if cached.Locality != "Pererenan" {
+		t.Errorf("Expected cached locality 'Pererenan', got '%s'", cached.Locality)
+	}
+	if ttl := mr.TTL("geocode:-8.65,115.12"); ttl != 30*24*time.Hour {
+		t.Errorf("Expected 30 day TTL on cached entry, got %v", ttl)
+	}
+
+	// With caching disabled, a CSV match must not touch Redis (nil client)
+	hNoCache := NewHandler(nil, "", "", false, customLocations, false, nil)
+	rNoCache := gin.Default()
+	rNoCache.GET("/geocoding", hNoCache.HandleReverseGeocode)
+
+	req, _ = http.NewRequest("GET", "/geocoding?latitude=-8.652125&longitude=115.121654", nil)
+	w = httptest.NewRecorder()
+	rNoCache.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 with caching disabled, got %v", w.Code)
 	}
 }
 
