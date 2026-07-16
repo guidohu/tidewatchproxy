@@ -411,3 +411,83 @@ func TestStormglassInvalidKeyCaching(t *testing.T) {
 		t.Errorf("Expected upstream to be called for different key, call count: %d", callCount)
 	}
 }
+
+func TestStormglassQuotaExceededCaching(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Save original transport
+	origTransport := http.DefaultClient.Transport
+	defer func() {
+		http.DefaultClient.Transport = origTransport
+	}()
+
+	const quotaBody = `{"errors":{"key":"API quota exceeded"},"meta":{"dailyQuota":10,"requestCount":41}}`
+
+	var callCount int
+
+	// Mock Stormglass returning a quota-exceeded error
+	http.DefaultClient.Transport = &mockRoundTripper{
+		roundTripFunc: func(req *http.Request) (*http.Response, error) {
+			callCount++
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Body:       io.NopCloser(strings.NewReader(quotaBody)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+
+	// Use local memory cache (redisClient is nil)
+	h := NewHandler(nil, "default-key", "", false, nil, false, nil)
+	r := gin.Default()
+	r.GET("/weather/point", func(c *gin.Context) {
+		c.Set("api_key", "quota-key-1")
+		h.HandleWeather(c)
+	})
+
+	// First request -> Should call upstream and return the quota error verbatim
+	req, _ := http.NewRequest("GET", "/weather/point?lat=10&lng=20&params=swellHeight", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("Expected first request status 429, got %v", w.Code)
+	}
+	if w.Body.String() != quotaBody {
+		t.Errorf("Expected first response body to be direct upstream error, got `%s`", w.Body.String())
+	}
+	if callCount != 1 {
+		t.Errorf("Expected upstream to be called exactly 1 time, called %d times", callCount)
+	}
+
+	// Second request with same key -> Should not call upstream (cached quota)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("Expected second request status 429, got %v", w.Code)
+	}
+	if w.Body.String() != quotaBody {
+		t.Errorf("Expected second response body to be cached quota error, got `%s`", w.Body.String())
+	}
+	if w.Header().Get("X-Cache") != "HIT" {
+		t.Errorf("Expected cached quota response to set X-Cache: HIT, got `%s`", w.Header().Get("X-Cache"))
+	}
+	if callCount != 1 {
+		t.Errorf("Expected upstream to NOT be called a second time (cached), call count: %d", callCount)
+	}
+
+	// Request with a different key -> Should call upstream
+	r2 := gin.Default()
+	r2.GET("/weather/point", func(c *gin.Context) {
+		c.Set("api_key", "quota-key-2")
+		h.HandleWeather(c)
+	})
+	req2, _ := http.NewRequest("GET", "/weather/point?lat=10&lng=20&params=swellHeight", nil)
+	w2 := httptest.NewRecorder()
+	r2.ServeHTTP(w2, req2)
+
+	if callCount != 2 {
+		t.Errorf("Expected upstream to be called for different key, call count: %d", callCount)
+	}
+}

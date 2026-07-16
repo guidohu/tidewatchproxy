@@ -117,7 +117,10 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 		if strings.TrimSpace(string(body)) == `{"errors":{"key":"API key is invalid"}}` {
 			h.markAPIKeyInvalid(apiKey)
 		}
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		if isQuotaExceededResponse(body) {
+			h.markAPIKeyQuotaExceeded(apiKey, resp.StatusCode, body)
+			c.Set("error_type", "Stormglass Quota Exceeded")
+		} else if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			c.Set("error_type", "Stormglass Auth Error")
 		} else if resp.StatusCode == http.StatusTooManyRequests {
 			c.Set("error_type", "Stormglass Rate Limit")
@@ -292,7 +295,10 @@ func (h *Handler) HandleTides(c *gin.Context) {
 		if strings.TrimSpace(string(body)) == `{"errors":{"key":"API key is invalid"}}` {
 			h.markAPIKeyInvalid(apiKey)
 		}
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		if isQuotaExceededResponse(body) {
+			h.markAPIKeyQuotaExceeded(apiKey, resp.StatusCode, body)
+			c.Set("error_type", "Stormglass Quota Exceeded")
+		} else if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			c.Set("error_type", "Stormglass Auth Error")
 		} else if resp.StatusCode == http.StatusTooManyRequests {
 			c.Set("error_type", "Stormglass Rate Limit")
@@ -417,7 +423,10 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 		if strings.TrimSpace(string(body)) == `{"errors":{"key":"API key is invalid"}}` {
 			h.markAPIKeyInvalid(apiKey)
 		}
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		if isQuotaExceededResponse(body) {
+			h.markAPIKeyQuotaExceeded(apiKey, resp.StatusCode, body)
+			c.Set("error_type", "Stormglass Quota Exceeded")
+		} else if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 			c.Set("error_type", "Stormglass Auth Error")
 		} else if resp.StatusCode == http.StatusTooManyRequests {
 			c.Set("error_type", "Stormglass Rate Limit")
@@ -512,11 +521,103 @@ func (h *Handler) markAPIKeyInvalid(apiKey string) {
 	h.invalidKeysMutex.Unlock()
 }
 
+// quotaExceededCacheKey builds the cache key for a quota-exceeded API key.
+func quotaExceededCacheKey(apiKey string) string {
+	return "stormglass:quota_exceeded:" + apiKey
+}
+
+// isQuotaExceededResponse reports whether an upstream error body is a
+// Stormglass "API quota exceeded" response. The meta object (dailyQuota,
+// requestCount) varies per request, so we match on the errors.key field
+// rather than the raw body.
+func isQuotaExceededResponse(body []byte) bool {
+	var parsed struct {
+		Errors struct {
+			Key string `json:"key"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return false
+	}
+	return parsed.Errors.Key == "API quota exceeded"
+}
+
+// markAPIKeyQuotaExceeded caches a quota-exceeded upstream response for an API
+// key for 1 hour, so we stop retrying until the quota resets.
+func (h *Handler) markAPIKeyQuotaExceeded(apiKey string, status int, body []byte) {
+	if apiKey == "" {
+		return
+	}
+	duration := time.Hour
+
+	// 1. Save in Redis if enabled
+	if h.useCache && h.redisClient != nil {
+		entry, _ := json.Marshal(struct {
+			Status int    `json:"status"`
+			Body   string `json:"body"`
+		}{Status: status, Body: string(body)})
+		h.redisClient.Set(h.ctx, quotaExceededCacheKey(apiKey), entry, duration)
+	}
+
+	// 2. Save in local in-memory cache
+	h.quotaMutex.Lock()
+	if h.quotaExceeded == nil {
+		h.quotaExceeded = make(map[string]quotaCacheEntry)
+	}
+	h.quotaExceeded[apiKey] = quotaCacheEntry{status: status, body: append([]byte(nil), body...), expiry: time.Now().Add(duration)}
+	h.quotaMutex.Unlock()
+}
+
+// getQuotaExceededResponse returns the cached quota-exceeded response for an API
+// key, if one is currently cached.
+func (h *Handler) getQuotaExceededResponse(apiKey string) (quotaCacheEntry, bool) {
+	if apiKey == "" {
+		return quotaCacheEntry{}, false
+	}
+
+	// 1. Check Redis first if enabled
+	if h.useCache && h.redisClient != nil {
+		if val, err := h.redisClient.Get(h.ctx, quotaExceededCacheKey(apiKey)).Result(); err == nil {
+			var stored struct {
+				Status int    `json:"status"`
+				Body   string `json:"body"`
+			}
+			if json.Unmarshal([]byte(val), &stored) == nil {
+				return quotaCacheEntry{status: stored.Status, body: []byte(stored.Body)}, true
+			}
+		}
+	}
+
+	// 2. Check local in-memory cache
+	h.quotaMutex.RLock()
+	entry, exists := h.quotaExceeded[apiKey]
+	h.quotaMutex.RUnlock()
+
+	if exists {
+		if time.Now().Before(entry.expiry) {
+			return entry, true
+		}
+		// Clean up expired entry
+		h.quotaMutex.Lock()
+		delete(h.quotaExceeded, apiKey)
+		h.quotaMutex.Unlock()
+	}
+
+	return quotaCacheEntry{}, false
+}
+
 func (h *Handler) checkStormglassAPIKey(c *gin.Context) (string, bool) {
 	apiKey := c.GetString("api_key")
 	if h.isAPIKeyInvalid(apiKey) {
 		c.Set("error_type", "Stormglass Auth Error")
 		c.Data(http.StatusForbidden, "application/json", []byte(`{"errors":{"key":"API key is invalid (cached)"}}`))
+		return "", false
+	}
+	if entry, ok := h.getQuotaExceededResponse(apiKey); ok {
+		c.Set("error_type", "Stormglass Quota Exceeded")
+		c.Header("X-Cache", "HIT")
+		c.Set("is_cache_hit", true)
+		c.Data(entry.status, "application/json", entry.body)
 		return "", false
 	}
 	return apiKey, true

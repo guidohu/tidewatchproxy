@@ -29,6 +29,15 @@ type Handler struct {
 	locationStore      *store.LocationStore
 	invalidKeysMutex   sync.RWMutex
 	invalidKeys        map[string]time.Time
+	quotaMutex         sync.RWMutex
+	quotaExceeded      map[string]quotaCacheEntry
+}
+
+// quotaCacheEntry holds a cached "quota exceeded" upstream response for an API key.
+type quotaCacheEntry struct {
+	status int
+	body   []byte
+	expiry time.Time
 }
 
 func NewHandler(redisClient *redis.Client, stormglassAPIKey string, bigDataCloudAPIKey string, useCache bool, customLocations map[string]string, debug bool, locationStore *store.LocationStore) *Handler {
@@ -42,6 +51,7 @@ func NewHandler(redisClient *redis.Client, stormglassAPIKey string, bigDataCloud
 		ctx:                context.Background(),
 		locationStore:      locationStore,
 		invalidKeys:        make(map[string]time.Time),
+		quotaExceeded:      make(map[string]quotaCacheEntry),
 	}
 }
 
