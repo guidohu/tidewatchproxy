@@ -656,3 +656,100 @@ func TestOpenWatersCaching(t *testing.T) {
 		t.Errorf("Expected upstream to be called for different coordinates, call count: %d", callCount)
 	}
 }
+
+func TestHandleGeocodeCacheAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Start miniredis
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when starting miniredis", err)
+	}
+	defer mr.Close()
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: mr.Addr(),
+	})
+
+	h := NewHandler(redisClient, "", "", true, nil, false, nil)
+
+	r := gin.Default()
+	r.GET("/dashboard/api/geocode-cache", h.HandleGeocodeCacheAPI)
+
+	// Test 1: Empty cache returns empty list
+	req, _ := http.NewRequest("GET", "/dashboard/api/geocode-cache", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %v", w.Code)
+	}
+	var entries []GeocodeCacheEntry
+	if err := json.Unmarshal(w.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("Expected 0 entries, got %d", len(entries))
+	}
+
+	// Test 2: Cached entries are returned with parsed coordinates
+	mr.Set("geocode:47.37,8.54", `{"locality":"Zurich District","city":"Zurich","countryName":"Switzerland","countryCode":"CH"}`)
+	mr.Set("geocode:-33.86,151.21", `{"locality":"Sydney Harbour","city":"Sydney","countryName":"Australia","countryCode":"AU"}`)
+	// Non-geocode keys must be ignored
+	mr.Set("invalid_api_key:some-key", "1")
+
+	req, _ = http.NewRequest("GET", "/dashboard/api/geocode-cache", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %v", w.Code)
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("Expected 2 entries, got %d", len(entries))
+	}
+
+	found := false
+	for _, e := range entries {
+		if e.City == "Zurich" {
+			found = true
+			if e.CountryName != "Switzerland" {
+				t.Errorf("Expected country name 'Switzerland', got '%s'", e.CountryName)
+			}
+			if e.CountryCode != "CH" {
+				t.Errorf("Expected country code 'CH', got '%s'", e.CountryCode)
+			}
+			if e.Locality != "Zurich District" {
+				t.Errorf("Expected locality 'Zurich District', got '%s'", e.Locality)
+			}
+			if e.Lat != 47.37 || e.Lng != 8.54 {
+				t.Errorf("Expected coordinates 47.37, 8.54, got %v, %v", e.Lat, e.Lng)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("Expected to find Zurich entry in response")
+	}
+
+	// Test 3: Caching disabled returns empty list
+	hNoCache := NewHandler(nil, "", "", false, nil, false, nil)
+	rNoCache := gin.Default()
+	rNoCache.GET("/dashboard/api/geocode-cache", hNoCache.HandleGeocodeCacheAPI)
+
+	req, _ = http.NewRequest("GET", "/dashboard/api/geocode-cache", nil)
+	w = httptest.NewRecorder()
+	rNoCache.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 with caching disabled, got %v", w.Code)
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("Expected 0 entries with caching disabled, got %d", len(entries))
+	}
+}

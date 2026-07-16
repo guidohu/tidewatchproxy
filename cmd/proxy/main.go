@@ -160,6 +160,7 @@ func main() {
 	r.GET("/dashboard/api/usage", dashboardHandler.HandleUsageAPI)
 	r.GET("/dashboard/api/users-per-version", dashboardHandler.HandleUsersPerVersionAPI)
 	r.GET("/dashboard/api/ping-usage", dashboardHandler.HandlePingUsageAPI)
+	r.GET("/dashboard/api/geocode-cache", h.HandleGeocodeCacheAPI)
 
 	// Swagger documentation route (no logging)
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

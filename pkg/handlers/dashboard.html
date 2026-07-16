@@ -103,6 +103,16 @@
             font-size: 0.75rem;
         }
         .error-table tr:hover { background-color: #f1f5f9; }
+        .error-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        .error-table th.sortable:hover { color: #334155; }
+        .error-table th.sortable .sort-arrow {
+            display: inline-block;
+            width: 1em;
+            color: #94a3b8;
+        }
         .status-badge {
             padding: 4px 8px;
             border-radius: 4px;
@@ -261,6 +271,24 @@
                 </thead>
                 <tbody id="errorLogBody">
                     <tr><td colspan="8" style="text-align:center">No error logs available</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Cached Reverse Geocoding Entries</h2>
+            <table class="error-table">
+                <thead>
+                    <tr>
+                        <th class="sortable" onclick="sortGeocodeCache('locality')">Locality<span class="sort-arrow" id="geocodeSortArrow-locality"></span></th>
+                        <th class="sortable" onclick="sortGeocodeCache('city')">City<span class="sort-arrow" id="geocodeSortArrow-city"></span></th>
+                        <th class="sortable" onclick="sortGeocodeCache('countryName')">Country Name<span class="sort-arrow" id="geocodeSortArrow-countryName"></span></th>
+                        <th class="sortable" onclick="sortGeocodeCache('countryCode')">Country Code<span class="sort-arrow" id="geocodeSortArrow-countryCode"></span></th>
+                        <th class="sortable" onclick="sortGeocodeCache('gps')">GPS Coordinates<span class="sort-arrow" id="geocodeSortArrow-gps"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="geocodeCacheBody">
+                    <tr><td colspan="5" style="text-align:center">No cached entries available</td></tr>
                 </tbody>
             </table>
         </div>
@@ -547,6 +575,14 @@
                     });
                 });
 
+            // Fetch cached reverse geocoding entries (not timeframe-dependent)
+            fetch('/dashboard/api/geocode-cache')
+                .then(res => res.json())
+                .then(data => {
+                    geocodeCacheData = data || [];
+                    renderGeocodeCache();
+                });
+
             // Fetch Active Users per Version
             fetch('/dashboard/api/users-per-version?days=' + days)
                 .then(res => res.json())
@@ -567,6 +603,57 @@
                         ).join('');
                     }
                 });
+        }
+
+        // Cached reverse geocoding entries table with sortable columns
+        let geocodeCacheData = [];
+        let geocodeSort = { key: 'locality', dir: 1 };
+
+        function sortGeocodeCache(key) {
+            if (geocodeSort.key === key) {
+                geocodeSort.dir = -geocodeSort.dir;
+            } else {
+                geocodeSort = { key: key, dir: 1 };
+            }
+            renderGeocodeCache();
+        }
+
+        function renderGeocodeCache() {
+            // Update sort arrows
+            ['locality', 'city', 'countryName', 'countryCode', 'gps'].forEach(k => {
+                const arrow = document.getElementById('geocodeSortArrow-' + k);
+                if (k === geocodeSort.key) {
+                    arrow.innerText = geocodeSort.dir === 1 ? ' ▲' : ' ▼';
+                } else {
+                    arrow.innerText = '';
+                }
+            });
+
+            const body = document.getElementById('geocodeCacheBody');
+            if (geocodeCacheData.length === 0) {
+                body.innerHTML = '<tr><td colspan="5" style="text-align:center">No cached entries available</td></tr>';
+                return;
+            }
+
+            const sorted = [...geocodeCacheData].sort((a, b) => {
+                let cmp;
+                if (geocodeSort.key === 'gps') {
+                    cmp = (a.lat - b.lat) || (a.lng - b.lng);
+                } else {
+                    cmp = (a[geocodeSort.key] || '').localeCompare(b[geocodeSort.key] || '');
+                }
+                return cmp * geocodeSort.dir;
+            });
+
+            body.innerHTML = sorted.map(e =>
+                '<tr>' +
+                    '<td>' + (e.locality || 'N/A') + '</td>' +
+                    '<td>' + (e.city || 'N/A') + '</td>' +
+                    '<td>' + (e.countryName || 'N/A') + '</td>' +
+                    '<td>' + (e.countryCode || 'N/A') + '</td>' +
+                    '<td><code>' + e.lat.toFixed(2) + ', ' + e.lng.toFixed(2) + '</code></td>' +
+                '</tr>'
+            ).join('');
         }
 
         // Initial load
