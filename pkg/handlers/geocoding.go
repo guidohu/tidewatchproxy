@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"tide_watch_proxy/pkg/models"
@@ -121,4 +122,76 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 
 	c.Header("X-Cache", "MISS")
 	c.JSON(http.StatusOK, filtered)
+}
+
+// GeocodeCacheEntry represents a cached reverse-geocoding result for the dashboard.
+type GeocodeCacheEntry struct {
+	Locality    string  `json:"locality"`
+	City        string  `json:"city"`
+	CountryName string  `json:"countryName"`
+	CountryCode string  `json:"countryCode"`
+	Lat         float64 `json:"lat"`
+	Lng         float64 `json:"lng"`
+}
+
+// HandleGeocodeCacheAPI returns all reverse-geocoding entries currently in the Redis cache.
+func (h *Handler) HandleGeocodeCacheAPI(c *gin.Context) {
+	entries := []GeocodeCacheEntry{}
+	if !h.useCache {
+		c.JSON(http.StatusOK, entries)
+		return
+	}
+
+	var cursor uint64
+	for {
+		keys, next, err := h.redisClient.Scan(h.ctx, cursor, "geocode:*", 100).Result()
+		if err != nil {
+			log.Printf("Error scanning geocode cache: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan geocode cache"})
+			return
+		}
+
+		if len(keys) > 0 {
+			vals, err := h.redisClient.MGet(h.ctx, keys...).Result()
+			if err != nil {
+				log.Printf("Error fetching geocode cache values: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch geocode cache values"})
+				return
+			}
+			for i, val := range vals {
+				str, ok := val.(string)
+				if !ok {
+					continue
+				}
+				var loc models.LocationResponse
+				if err := json.Unmarshal([]byte(str), &loc); err != nil {
+					continue
+				}
+				coords := strings.Split(strings.TrimPrefix(keys[i], "geocode:"), ",")
+				if len(coords) != 2 {
+					continue
+				}
+				lat, latErr := strconv.ParseFloat(coords[0], 64)
+				lng, lngErr := strconv.ParseFloat(coords[1], 64)
+				if latErr != nil || lngErr != nil {
+					continue
+				}
+				entries = append(entries, GeocodeCacheEntry{
+					Locality:    loc.Locality,
+					City:        loc.City,
+					CountryName: loc.CountryName,
+					CountryCode: loc.CountryCode,
+					Lat:         lat,
+					Lng:         lng,
+				})
+			}
+		}
+
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+
+	c.JSON(http.StatusOK, entries)
 }
