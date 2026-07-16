@@ -573,3 +573,86 @@ func TestStormglassQuotaExceededCaching(t *testing.T) {
 		t.Errorf("Expected upstream to be called for different key, call count: %d", callCount)
 	}
 }
+
+func TestOpenWatersCaching(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Start miniredis
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when starting miniredis", err)
+	}
+	defer mr.Close()
+
+	redisClient := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+
+	// Save original transport
+	origTransport := httpClient.Transport
+	defer func() {
+		httpClient.Transport = origTransport
+	}()
+
+	extremesJSON := `{
+		"station": {"name": "Key West", "country": "USA"},
+		"extremes": [{"time": "2026-06-02T10:00:00Z", "level": 0.45, "high": true}]
+	}`
+
+	var callCount int
+	httpClient.Transport = &mockRoundTripper{
+		roundTripFunc: func(req *http.Request) (*http.Response, error) {
+			callCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(extremesJSON)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+
+	h := NewHandler(redisClient, "", "", true, nil, false, nil)
+	r := gin.Default()
+	r.GET("/tides/extremes", h.HandleOpenWatersExtremes)
+
+	req, _ := http.NewRequest("GET", "/tides/extremes?latitude=24.55&longitude=-81.8&datum=MLLW", nil)
+
+	// First request -> cache MISS, calls upstream
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected first request status 200, got %v", w.Code)
+	}
+	if w.Header().Get("X-Cache") != "MISS" {
+		t.Errorf("Expected first request X-Cache: MISS, got `%s`", w.Header().Get("X-Cache"))
+	}
+	if callCount != 1 {
+		t.Errorf("Expected upstream to be called exactly 1 time, called %d times", callCount)
+	}
+	firstBody := w.Body.String()
+
+	// Second identical request -> cache HIT, no upstream call, identical body
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected second request status 200, got %v", w.Code)
+	}
+	if w.Header().Get("X-Cache") != "HIT" {
+		t.Errorf("Expected second request X-Cache: HIT, got `%s`", w.Header().Get("X-Cache"))
+	}
+	if callCount != 1 {
+		t.Errorf("Expected upstream to NOT be called a second time (cached), call count: %d", callCount)
+	}
+	if w.Body.String() != firstBody {
+		t.Errorf("Expected cached body to match first response.\nfirst: %s\ncached: %s", firstBody, w.Body.String())
+	}
+
+	// Request with different coordinates -> cache MISS, calls upstream again
+	req2, _ := http.NewRequest("GET", "/tides/extremes?latitude=10&longitude=20&datum=MLLW", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+
+	if callCount != 2 {
+		t.Errorf("Expected upstream to be called for different coordinates, call count: %d", callCount)
+	}
+}

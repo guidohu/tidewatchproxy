@@ -58,6 +58,18 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 		return
 	}
 
+	cacheKey := fmt.Sprintf("ow_extremes:%s:%s:%s:%s:%s:%s",
+		latitude, longitude, start, end, datum, units)
+
+	if h.useCache {
+		if val, err := h.redisClient.Get(h.ctx, cacheKey).Result(); err == nil {
+			c.Header("X-Cache", "HIT")
+			c.Set("is_cache_hit", true)
+			c.Data(http.StatusOK, "application/json", []byte(val))
+			return
+		}
+	}
+
 	url := fmt.Sprintf("%s/extremes?latitude=%s&longitude=%s&units=%s",
 		OpenWatersBaseURL, latitude, longitude, units)
 
@@ -126,6 +138,12 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 		})
 	}
 
+	jsonData, _ := json.Marshal(dense)
+	if h.useCache {
+		h.redisClient.Set(h.ctx, cacheKey, jsonData, time.Hour)
+	}
+
+	c.Header("X-Cache", "MISS")
 	c.JSON(http.StatusOK, dense)
 }
 
@@ -163,6 +181,18 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 		c.Set("error_type", "Invalid Datum")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid datum. Allowed values: LAT, MSL, MLLW"})
 		return
+	}
+
+	cacheKey := fmt.Sprintf("ow_timeline:%s:%s:%s:%s:%s:%s",
+		latitude, longitude, start, end, datum, units)
+
+	if h.useCache {
+		if val, err := h.redisClient.Get(h.ctx, cacheKey).Result(); err == nil {
+			c.Header("X-Cache", "HIT")
+			c.Set("is_cache_hit", true)
+			c.Data(http.StatusOK, "application/json", []byte(val))
+			return
+		}
 	}
 
 	url := fmt.Sprintf("%s/timeline?latitude=%s&longitude=%s&units=%s",
@@ -240,5 +270,11 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 		}
 	}
 
+	jsonData, _ := json.Marshal(dense)
+	if h.useCache {
+		h.redisClient.Set(h.ctx, cacheKey, jsonData, time.Hour)
+	}
+
+	c.Header("X-Cache", "MISS")
 	c.JSON(http.StatusOK, dense)
 }

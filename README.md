@@ -11,7 +11,7 @@ It fetches data from the Stormglass API, filters for requested parameters, and r
 - **Tide Extremes**: Retrieves high and low tide times and heights.
 - **Sea Level Data**: Retrieves time-series sea level data with custom datum support (e.g., `MLLW`).
 - **Reverse Geocoding**: Integrated with BigDataCloud and supports **custom location overrides** via CSV.
-- **Redis Caching**: Caches responses locally to stay within API rate limits and speed up subsequent requests.
+- **Layered Caching**: Caches upstream responses (and error states) to stay within API rate limits and speed up subsequent requests. See [Caching](#caching).
 - **Strict Validation**: Enforces input parameters and filters requested weather parameters.
 - **Access Control**: Secures proxy access with allowed App IDs.
 - **OpenAPI Documentation**: Interactive Swagger UI for API exploration and testing.
@@ -146,6 +146,23 @@ The proxy also supports endpoints that use the [OpenWaters.io](https://openwater
 `GET /tides/timeline?latitude=...&longitude=...&start=...&end=...&datum=...&units=...`
 - **Parameters**: Same as above.
 - Returns `DenseTideData` (same as Stormglass sea level).
+
+## Caching
+
+To stay within upstream API rate limits and speed up repeated requests, the proxy maintains several caches. Response caches live in Redis and are only active when caching is enabled (Redis reachable and `--use-cache` not set to `false`). The two API-key state caches additionally keep an in-memory fallback, so they keep working even without Redis. Cached responses are marked with an `X-Cache: HIT` header (fresh upstream fetches use `X-Cache: MISS`).
+
+| Cache | Upstream source | What it stores | Backend | Key prefix | TTL |
+| --- | --- | --- | --- | --- | --- |
+| Weather point | Stormglass | Dense weather/swell/wind response (`/v2/weather/point`) | Redis | `weather:` | 1 hour |
+| Tide extremes | Stormglass | Dense tide extremes response (`/v2/tide/extremes/point`) | Redis | `tides:` | 1 hour |
+| Sea level | Stormglass | Dense sea level response (`/v2/tide/sea-level/point`) | Redis | `sealevel:` | 1 hour |
+| Tide extremes | OpenWaters | Dense tide extremes response (`/tides/extremes`) | Redis | `ow_extremes:` | 1 hour |
+| Tide timeline | OpenWaters | Dense tide timeline response (`/tides/timeline`) | Redis | `ow_timeline:` | 1 hour |
+| Reverse geocoding | BigDataCloud | Locality result (`/data/reverse-geocode`) | Redis | `geocode:` | 30 days |
+| Invalid API key | Stormglass | Flags a Stormglass API key reported as invalid, so subsequent requests are rejected immediately instead of calling upstream | Redis + in-memory | `stormglass:invalid_key:` | 12 hours |
+| Quota exceeded | Stormglass | The Stormglass "API quota exceeded" response, replayed for the affected key instead of retrying upstream until the daily quota resets | Redis + in-memory | `stormglass:quota_exceeded:` | 1 hour |
+
+The invalid-key and quota-exceeded caches are keyed per Stormglass API key, so they only short-circuit requests made with the affected key.
 
 ## Documentation & Visualization
 
