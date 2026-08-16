@@ -1,7 +1,57 @@
+# Everything here is excluded from the build context sent to Docker.
+# Only what `go build` needs (go.mod, go.sum, cmd/, pkg/) has to stay.
+
+# Version control
 .git
-.antigravity
-scratch
+.gitignore
+.gitattributes
+.github
+
+# Docker / compose (not needed inside the image)
+.dockerignore
+Dockerfile
+docker-compose.yml
+docker-compose-testing.yml
+
+# Go build artifacts and local binaries
+tide_watch_proxy
 dist
 bin
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace files (would override the module build)
+go.work
+go.work.sum
+
+# Databases and logs (runtime state, mounted or created at runtime)
 *.db
+*.db-shm
+*.db-wal
 *.log
+
+# Secrets and local environment
+.env
+.env.local
+.env.*.local
+
+# Agent/tooling and scratch directories
+.antigravity
+.claude
+scratch
+
+# Editor and OS cruft
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+README.md
