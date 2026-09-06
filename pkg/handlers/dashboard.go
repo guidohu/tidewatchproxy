@@ -63,7 +63,7 @@ func (h *DashboardHandler) HandleFailureTrendAPI(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch failure trend"})
 		return
 	}
-	log.Printf("Fetched %d failure trend buckets for last %d days", len(trend), days)
+	log.Printf("Fetched %d failure trend buckets (%d points) for last %d days", len(trend.Buckets), len(trend.Points), days)
 	c.JSON(http.StatusOK, trend)
 }
 

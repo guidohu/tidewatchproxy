@@ -318,11 +318,21 @@
             return "per Day";
         }
 
+        // SQLite emits buckets as UTC strings ("2026-09-05 09:15", or "2026-09-05"
+        // for daily buckets). Without an explicit zone the browser would read
+        // them as local time and the axis would drift by the UTC offset.
+        function parseBucket(bucket) {
+            if (bucket.length === 10) return new Date(bucket + 'T00:00:00Z');
+            return new Date(bucket.replace(' ', 'T') + ':00Z');
+        }
+
         function formatBucketLabel(bucket, days) {
-            const date = new Date(bucket);
+            const date = parseBucket(bucket);
             if (days == 1) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             if (days == 7) return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.getHours() + ':00';
-            return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            // Daily buckets are UTC calendar days, so label them in UTC rather
+            // than letting them slip to the previous day west of Greenwich.
+            return date.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
         }
 
         // Map Initialization
@@ -437,18 +447,22 @@
             fetch('/dashboard/api/reasons-trend?days=' + days)
                 .then(res => res.json())
                 .then(data => {
-                    if (!data) data = [];
+                    if (!data) data = {};
 
                     document.getElementById('failureTrendTitle').innerText =
                         "Failures per Reason (" + bucketUnitLabel(days) + ")";
 
-                    const buckets = [...new Set(data.map(d => d.bucket))].sort();
+                    // The server sends the full timeline separately from the
+                    // counts, so quiet periods stay on the axis instead of being
+                    // squeezed out between the buckets that do have failures.
+                    const buckets = data.buckets || [];
+                    const points = data.points || [];
 
                     // Order reasons by total volume so the biggest contributor
                     // sits at the bottom of the stack and shares the doughnut's color.
                     const totals = {};
                     const byBucketReason = {};
-                    data.forEach(d => {
+                    points.forEach(d => {
                         totals[d.reason] = (totals[d.reason] || 0) + d.count;
                         byBucketReason[d.bucket + '\u0000' + d.reason] = d.count;
                     });

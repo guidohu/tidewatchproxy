@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"tide_watch_proxy/pkg/util"
@@ -564,34 +565,95 @@ type FailureTrendStats struct {
 	Count  int    `json:"count"`
 }
 
-// GetFailureTrend returns failure counts per error type over time, bucketed the
-// same way as GetUsageStats. Only the most frequent error types are reported
-// individually; the remainder is aggregated into an "Other" series so the chart
-// legend stays readable.
-func (s *LocationStore) GetFailureTrend(days int) ([]FailureTrendStats, error) {
-	var bucketExpr, timeFilter string
-	var args []interface{}
+// FailureTrend pairs a gapless timeline of buckets with the (sparse) per-reason
+// counts. Buckets without a single failure carry no point, so the timeline is
+// what lets the dashboard render them as empty slots instead of dropping them
+// off the axis.
+type FailureTrend struct {
+	Buckets []string            `json:"buckets"`
+	Points  []FailureTrendStats `json:"points"`
+}
 
-	if days <= 1 && days != 0 {
+// trendBucketing describes how failures are grouped into time buckets for a
+// timeframe. The SQL expression and the generated timeline have to produce
+// identical bucket strings, so both are defined in one place.
+type trendBucketing struct {
+	sqlExpr string
+	layout  string
+	step    time.Duration
+	// span is how far back the timeline reaches. Zero means "all time", where
+	// the timeline instead starts at the oldest failure on record.
+	span time.Duration
+}
+
+// maxTrendBuckets guards timeline generation. Logs are pruned after 30 days, so
+// only a pathological database could come close to this.
+const maxTrendBuckets = 10000
+
+func trendBucketingFor(days int) trendBucketing {
+	switch {
+	case days <= 1 && days != 0:
 		// 24 hours, 5 minute buckets
-		bucketExpr = "strftime('%Y-%m-%d %H:%M', datetime((strftime('%s', timestamp) / 300) * 300, 'unixepoch'))"
-		timeFilter = " AND timestamp >= datetime('now', '-24 hours')"
-	} else if days <= 7 && days != 0 {
-		// 7 days, 1 hour buckets
-		bucketExpr = "strftime('%Y-%m-%d %H:00', timestamp)"
-		timeFilter = " AND timestamp >= datetime('now', '-7 days')"
-	} else {
-		// 30 days or All Time, 1 day buckets
-		bucketExpr = "strftime('%Y-%m-%d', timestamp)"
-		if days > 0 {
-			timeFilter = " AND timestamp >= datetime('now', ?)"
-			args = append(args, fmt.Sprintf("-%d days", days))
+		return trendBucketing{
+			sqlExpr: "strftime('%Y-%m-%d %H:%M', datetime((strftime('%s', timestamp) / 300) * 300, 'unixepoch'))",
+			layout:  "2006-01-02 15:04",
+			step:    5 * time.Minute,
+			span:    24 * time.Hour,
 		}
+	case days <= 7 && days != 0:
+		// 7 days, 1 hour buckets
+		return trendBucketing{
+			sqlExpr: "strftime('%Y-%m-%d %H:00', timestamp)",
+			layout:  "2006-01-02 15:04",
+			step:    time.Hour,
+			span:    7 * 24 * time.Hour,
+		}
+	default:
+		// 30 days or All Time, 1 day buckets
+		return trendBucketing{
+			sqlExpr: "strftime('%Y-%m-%d', timestamp)",
+			layout:  "2006-01-02",
+			step:    24 * time.Hour,
+			span:    time.Duration(days) * 24 * time.Hour,
+		}
+	}
+}
+
+// truncate floors t onto a bucket boundary. Timestamps are stored in UTC, and
+// flooring the Unix epoch by the step size is exactly what the SQL expressions
+// above do (for daily buckets that lands on UTC midnight).
+func (b trendBucketing) truncate(t time.Time) time.Time {
+	step := int64(b.step / time.Second)
+	return time.Unix((t.UTC().Unix()/step)*step, 0).UTC()
+}
+
+// timeline returns every bucket from start through end inclusive.
+func (b trendBucketing) timeline(start, end time.Time) []string {
+	buckets := []string{}
+	for t := b.truncate(start); !t.After(end) && len(buckets) < maxTrendBuckets; t = t.Add(b.step) {
+		buckets = append(buckets, t.Format(b.layout))
+	}
+	return buckets
+}
+
+// GetFailureTrend returns failure counts per error type over time, bucketed the
+// same way as GetUsageStats, together with the full bucket timeline for the
+// timeframe. Only the most frequent error types are reported individually; the
+// remainder is aggregated into an "Other" series so the chart legend stays
+// readable.
+func (s *LocationStore) GetFailureTrend(days int) (*FailureTrend, error) {
+	b := trendBucketingFor(days)
+
+	timeFilter := ""
+	var args []interface{}
+	if b.span > 0 {
+		timeFilter = " AND timestamp >= datetime('now', ?)"
+		args = append(args, fmt.Sprintf("-%d seconds", int64(b.span/time.Second)))
 	}
 
 	query := `
 		WITH failures AS (
-			SELECT ` + bucketExpr + ` as bucket, error_type
+			SELECT ` + b.sqlExpr + ` as bucket, error_type
 			FROM requests
 			WHERE status_code >= 400 AND error_type IS NOT NULL AND error_type != ''` + timeFilter + `
 		),
@@ -616,15 +678,62 @@ func (s *LocationStore) GetFailureTrend(days int) ([]FailureTrendStats, error) {
 	}
 	defer rows.Close()
 
-	var stats []FailureTrendStats
+	points := []FailureTrendStats{}
 	for rows.Next() {
 		var st FailureTrendStats
 		if err := rows.Scan(&st.Bucket, &st.Reason, &st.Count); err != nil {
 			return nil, err
 		}
-		stats = append(stats, st)
+		points = append(points, st)
 	}
-	return stats, nil
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	trend := &FailureTrend{Buckets: []string{}, Points: points}
+
+	now := time.Now().UTC()
+	var start time.Time
+	switch {
+	case b.span > 0:
+		start = now.Add(-b.span)
+	case len(points) > 0:
+		// All time: anchor the timeline at the oldest failure on record.
+		oldest, err := time.ParseInLocation(b.layout, points[0].Bucket, time.UTC)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse oldest failure bucket %q: %w", points[0].Bucket, err)
+		}
+		start = oldest
+	default:
+		// All time with no failures at all: nothing to span.
+		return trend, nil
+	}
+
+	trend.Buckets = mergeTrendBuckets(b.timeline(start, now), points)
+	return trend, nil
+}
+
+// mergeTrendBuckets folds any bucket the query returned but the timeline missed
+// back in. The database clock and this process can straddle a bucket boundary,
+// and a point without a bucket would silently drop out of the chart.
+func mergeTrendBuckets(buckets []string, points []FailureTrendStats) []string {
+	known := make(map[string]bool, len(buckets))
+	for _, bucket := range buckets {
+		known[bucket] = true
+	}
+
+	added := false
+	for _, p := range points {
+		if !known[p.Bucket] {
+			known[p.Bucket] = true
+			buckets = append(buckets, p.Bucket)
+			added = true
+		}
+	}
+	if added {
+		sort.Strings(buckets)
+	}
+	return buckets
 }
 
 func (s *LocationStore) GetUsageStats(days int) ([]UsageStats, error) {
