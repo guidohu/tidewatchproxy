@@ -558,6 +558,75 @@ func (s *LocationStore) GetFailureReasons(days int) ([]FailureReason, error) {
 	return reasons, nil
 }
 
+type FailureTrendStats struct {
+	Bucket string `json:"bucket"`
+	Reason string `json:"reason"`
+	Count  int    `json:"count"`
+}
+
+// GetFailureTrend returns failure counts per error type over time, bucketed the
+// same way as GetUsageStats. Only the most frequent error types are reported
+// individually; the remainder is aggregated into an "Other" series so the chart
+// legend stays readable.
+func (s *LocationStore) GetFailureTrend(days int) ([]FailureTrendStats, error) {
+	var bucketExpr, timeFilter string
+	var args []interface{}
+
+	if days <= 1 && days != 0 {
+		// 24 hours, 5 minute buckets
+		bucketExpr = "strftime('%Y-%m-%d %H:%M', datetime((strftime('%s', timestamp) / 300) * 300, 'unixepoch'))"
+		timeFilter = " AND timestamp >= datetime('now', '-24 hours')"
+	} else if days <= 7 && days != 0 {
+		// 7 days, 1 hour buckets
+		bucketExpr = "strftime('%Y-%m-%d %H:00', timestamp)"
+		timeFilter = " AND timestamp >= datetime('now', '-7 days')"
+	} else {
+		// 30 days or All Time, 1 day buckets
+		bucketExpr = "strftime('%Y-%m-%d', timestamp)"
+		if days > 0 {
+			timeFilter = " AND timestamp >= datetime('now', ?)"
+			args = append(args, fmt.Sprintf("-%d days", days))
+		}
+	}
+
+	query := `
+		WITH failures AS (
+			SELECT ` + bucketExpr + ` as bucket, error_type
+			FROM requests
+			WHERE status_code >= 400 AND error_type IS NOT NULL AND error_type != ''` + timeFilter + `
+		),
+		top_reasons AS (
+			SELECT error_type
+			FROM failures
+			GROUP BY error_type
+			ORDER BY COUNT(*) DESC
+			LIMIT 10
+		)
+		SELECT
+			bucket,
+			CASE WHEN error_type IN (SELECT error_type FROM top_reasons) THEN error_type ELSE 'Other' END as reason,
+			COUNT(*) as count
+		FROM failures
+		GROUP BY bucket, reason
+		ORDER BY bucket`
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []FailureTrendStats
+	for rows.Next() {
+		var st FailureTrendStats
+		if err := rows.Scan(&st.Bucket, &st.Reason, &st.Count); err != nil {
+			return nil, err
+		}
+		stats = append(stats, st)
+	}
+	return stats, nil
+}
+
 func (s *LocationStore) GetUsageStats(days int) ([]UsageStats, error) {
 	var query string
 	var args []interface{}

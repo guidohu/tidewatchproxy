@@ -55,6 +55,18 @@ func (h *DashboardHandler) HandleFailureReasonsAPI(c *gin.Context) {
 	c.JSON(http.StatusOK, reasons)
 }
 
+func (h *DashboardHandler) HandleFailureTrendAPI(c *gin.Context) {
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
+	trend, err := h.store.GetFailureTrend(days)
+	if err != nil {
+		log.Printf("Error fetching failure trend: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch failure trend"})
+		return
+	}
+	log.Printf("Fetched %d failure trend buckets for last %d days", len(trend), days)
+	c.JSON(http.StatusOK, trend)
+}
+
 func (h *DashboardHandler) HandleErrorLogsAPI(c *gin.Context) {
 	days, _ := strconv.Atoi(c.DefaultQuery("days", "0"))
 	logs, err := h.store.GetErrorLogs(days)

@@ -1,5 +1,8 @@
-# Build stage
-FROM golang:1.26-alpine AS builder
+# syntax=docker/dockerfile:1
+
+# Build stage. Always runs on the native build platform and cross-compiles to the
+# target, so multi-arch builds never go through QEMU emulation.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -10,9 +13,13 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 # Copy the source code
 COPY . .
 
-# Build the application (fully static, no cgo)
-RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/proxy ./cmd/proxy/main.go
+# Build the application (fully static, no cgo) for the requested target platform
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build,id=go-build-$TARGETOS-$TARGETARCH \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -ldflags="-s -w" -o /out/proxy ./cmd/proxy/main.go
 
 # Prepare the writable database directory owned by the distroless nonroot user (65532),
 # since the final stage has no shell to run mkdir/chown.

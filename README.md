@@ -175,7 +175,7 @@ The proxy includes built-in OpenAPI documentation. You can explore and test the 
 
 ### GPS & Metrics Dashboard
 An interactive dashboard is available to visualize request patterns and monitor proxy health.
-- **Visualizations**: Map of requested locations (aggregated to ~1km), backend success/failure rates, and top reasons for failed requests.
+- **Visualizations**: Map of requested locations (aggregated to ~1km), backend success/failure rates, top reasons for failed requests, and failures per reason over time.
 - **URL**: `http://localhost:8080/dashboard`
 
 ## Environment Variables

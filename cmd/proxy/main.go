@@ -156,6 +156,7 @@ func main() {
 	r.GET("/dashboard/api/locations", dashboardHandler.HandleLocationsAPI)
 	r.GET("/dashboard/api/stats", dashboardHandler.HandleStatsAPI)
 	r.GET("/dashboard/api/reasons", dashboardHandler.HandleFailureReasonsAPI)
+	r.GET("/dashboard/api/reasons-trend", dashboardHandler.HandleFailureTrendAPI)
 	r.GET("/dashboard/api/errors", dashboardHandler.HandleErrorLogsAPI)
 	r.GET("/dashboard/api/usage", dashboardHandler.HandleUsageAPI)
 	r.GET("/dashboard/api/users-per-version", dashboardHandler.HandleUsersPerVersionAPI)

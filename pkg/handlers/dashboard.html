@@ -176,6 +176,13 @@
             </div>
         </div>
 
+        <div class="card">
+            <h2 id="failureTrendTitle">Failures per Reason over Time</h2>
+            <div class="chart-container" style="height: 300px;">
+                <canvas id="failureTrendChart"></canvas>
+            </div>
+        </div>
+
         <div class="bottom-grid">
             <div class="card">
                 <h2>Top Failure Reasons</h2>
@@ -296,9 +303,27 @@
 
     <script>
         let failureChart;
+        let failureTrendChart;
         let usageChart;
         let pingUsageChart;
         let markerCluster;
+
+        // Shared palette so a failure reason keeps the same color in the
+        // doughnut and in the over-time chart.
+        const FAILURE_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280', '#14b8a6', '#f43f5e', '#84cc16', '#0ea5e9', '#a855f7'];
+
+        function bucketUnitLabel(days) {
+            if (days == 1) return "per 5 Minutes";
+            if (days == 7) return "per Hour";
+            return "per Day";
+        }
+
+        function formatBucketLabel(bucket, days) {
+            const date = new Date(bucket);
+            if (days == 1) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (days == 7) return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.getHours() + ':00';
+            return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        }
 
         // Map Initialization
         var map = L.map('map').setView([20, 0], 2);
@@ -392,7 +417,7 @@
                             labels: data.map(d => d.reason),
                             datasets: [{
                                 data: data.map(d => d.count),
-                                backgroundColor: ['#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280']
+                                backgroundColor: data.map((d, i) => FAILURE_COLORS[i % FAILURE_COLORS.length])
                             }]
                         },
                         options: {
@@ -402,6 +427,88 @@
                                 legend: {
                                     position: 'right',
                                     labels: { boxWidth: 12, font: { size: 11 } }
+                                }
+                            }
+                        }
+                    });
+                });
+
+            // Fetch Failure Trend (failures per reason over time)
+            fetch('/dashboard/api/reasons-trend?days=' + days)
+                .then(res => res.json())
+                .then(data => {
+                    if (!data) data = [];
+
+                    document.getElementById('failureTrendTitle').innerText =
+                        "Failures per Reason (" + bucketUnitLabel(days) + ")";
+
+                    const buckets = [...new Set(data.map(d => d.bucket))].sort();
+
+                    // Order reasons by total volume so the biggest contributor
+                    // sits at the bottom of the stack and shares the doughnut's color.
+                    const totals = {};
+                    const byBucketReason = {};
+                    data.forEach(d => {
+                        totals[d.reason] = (totals[d.reason] || 0) + d.count;
+                        byBucketReason[d.bucket + '\u0000' + d.reason] = d.count;
+                    });
+                    const reasons = Object.keys(totals).sort((a, b) => {
+                        if (a === 'Other') return 1;
+                        if (b === 'Other') return -1;
+                        return totals[b] - totals[a];
+                    });
+
+                    const datasets = reasons.map((reason, index) => {
+                        const counts = buckets.map(bucket => byBucketReason[bucket + '\u0000' + reason] || 0);
+
+                        return {
+                            label: reason,
+                            data: counts,
+                            backgroundColor: reason === 'Other' ? '#94a3b8' : FAILURE_COLORS[index % FAILURE_COLORS.length],
+                            borderRadius: 4,
+                            barPercentage: 0.8,
+                        };
+                    });
+
+                    if (failureTrendChart) failureTrendChart.destroy();
+                    failureTrendChart = new Chart(document.getElementById('failureTrendChart'), {
+                        type: 'bar',
+                        data: {
+                            labels: buckets.map(b => formatBucketLabel(b, days)),
+                            datasets: datasets
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {
+                                    stacked: true,
+                                    beginAtZero: true,
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: { font: { size: 11 }, precision: 0 }
+                                },
+                                x: {
+                                    stacked: true,
+                                    grid: { display: false },
+                                    ticks: {
+                                        font: { size: 10 },
+                                        maxRotation: 45,
+                                        minRotation: 45
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top',
+                                    labels: { boxWidth: 12, font: { size: 11 } }
+                                },
+                                tooltip: {
+                                    backgroundColor: '#1e293b',
+                                    padding: 12,
+                                    titleFont: { size: 14, weight: 'bold' },
+                                    bodyFont: { size: 13 },
+                                    filter: (item) => item.parsed.y > 0
                                 }
                             }
                         }
@@ -437,9 +544,7 @@
                 .then(data => {
                     if (!data) data = [];
 
-                    let unitLabel = "Requests per Day";
-                    if (days == 1) unitLabel = "Requests per 5 Minutes";
-                    else if (days == 7) unitLabel = "Requests per Hour";
+                    const unitLabel = "Requests " + bucketUnitLabel(days);
 
                     document.getElementById('usageTitle').innerText = "API Usage Trend (" + unitLabel + ")";
 
@@ -447,12 +552,7 @@
                     usageChart = new Chart(document.getElementById('usageChart'), {
                          type: 'bar',
                          data: {
-                             labels: data.map(d => {
-                                 const date = new Date(d.bucket);
-                                 if (days == 1) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                 if (days == 7) return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.getHours() + ':00';
-                                 return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                             }),
+                             labels: data.map(d => formatBucketLabel(d.bucket, days)),
                              datasets: [{
                                  label: 'API Requests',
                                  data: data.map(d => d.count),
@@ -499,9 +599,7 @@
                 .then(data => {
                     if (!data) data = [];
 
-                    let unitLabel = "Requests per Day";
-                    if (days == 1) unitLabel = "Requests per 5 Minutes";
-                    else if (days == 7) unitLabel = "Requests per Hour";
+                    const unitLabel = "Requests " + bucketUnitLabel(days);
 
                     document.getElementById('pingUsageTitle').innerText = "Ping Requests per Version (" + unitLabel + ")";
 
@@ -530,12 +628,7 @@
                     pingUsageChart = new Chart(document.getElementById('pingUsageChart'), {
                         type: 'bar',
                         data: {
-                            labels: buckets.map(b => {
-                                const date = new Date(b);
-                                if (days == 1) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                if (days == 7) return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.getHours() + ':00';
-                                return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                            }),
+                            labels: buckets.map(b => formatBucketLabel(b, days)),
                             datasets: datasets
                         },
                         options: {
