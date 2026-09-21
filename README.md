@@ -187,6 +187,48 @@ An interactive dashboard is available to visualize request patterns and monitor 
 - `ALLOWED_APP_IDS`: Restrict proxy access to a comma-separated list of App IDs (applies to all endpoints).
 - `DEBUG`: Set to `true` to enable detailed logging of API requests and responses.
 
+## Troubleshooting
+
+### Recovering after a host power loss
+
+Symptom: after the host lost power and came back up, every upstream call fails, and only recreating the stack (`docker compose down && docker compose up -d`) fixes it - restarting the container does not.
+
+```json
+{"error":"Failed to fetch from OpenWaters"}
+{"error":"Failed to fetch from Stormglass"}
+```
+
+This is a host problem, not an application problem. Docker gives a container's network sandbox the upstream nameservers the host has configured **at the moment the sandbox is created**, and never refreshes them. If Docker starts before the host has working DNS (no DHCP lease yet, `systemd-resolved` not up, the router still booting), the container is left with a resolver that cannot answer anything for as long as that sandbox lives. A container restart reuses the sandbox; `docker compose down` destroys it, which is why only that helps.
+
+Fix it on the host:
+
+- Make Docker wait for the network. In a systemd drop-in for `docker.service`, require `network-online.target`:
+  ```ini
+  [Unit]
+  After=network-online.target
+  Wants=network-online.target
+  ```
+- Pin the container's resolvers so they do not depend on host state at sandbox creation time, and make the stack come back by itself:
+  ```yaml
+  services:
+    proxy:
+      restart: unless-stopped
+      dns:
+        - 1.1.1.1
+        - 8.8.8.8
+  ```
+  Container names (such as `redis`) keep resolving through Docker's embedded DNS.
+- Make sure the clock is synchronised before containers start. A host without a working RTC boots with a wrong clock, and TLS certificate validation fails until NTP catches up.
+
+### Diagnosing a failing upstream
+
+Failed upstream calls are recorded with their cause rather than a generic connection error, so the two cases above can be told apart after the fact. The dashboard's failure reasons distinguish `DNS Error`, `TLS Error`, `Timeout` and `Connection Error` per backend, and the error log keeps the full underlying error with credentials redacted:
+
+```
+[ERROR] GET /v2/weather/point | Status: 500 | Backend: Stormglass | Error: Stormglass DNS Error
+[ERROR] Upstream Response: Get "https://api.stormglass.io/v2/weather/point?...": dial tcp: lookup api.stormglass.io: no such host
+```
+
 ## Development
 
 Run natively for development:

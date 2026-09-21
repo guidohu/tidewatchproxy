@@ -104,7 +104,7 @@ func (h *Handler) HandleWeather(c *gin.Context) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.Set("error_type", "Stormglass Connection Error")
+		setTransportError(c, "Stormglass", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
 		return
 	}
@@ -282,7 +282,7 @@ func (h *Handler) HandleTides(c *gin.Context) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.Set("error_type", "Stormglass Connection Error")
+		setTransportError(c, "Stormglass", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
 		return
 	}
@@ -410,7 +410,7 @@ func (h *Handler) HandleSeaLevel(c *gin.Context) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.Set("error_type", "Stormglass Connection Error")
+		setTransportError(c, "Stormglass", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from Stormglass"})
 		return
 	}

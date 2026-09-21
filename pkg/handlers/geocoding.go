@@ -88,7 +88,7 @@ func (h *Handler) HandleReverseGeocode(c *gin.Context) {
 
 	resp, err := httpClient.Get(url)
 	if err != nil {
-		c.Set("error_type", "BigDataCloud Connection Error")
+		setTransportError(c, "BigDataCloud", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from BigDataCloud"})
 		return
 	}

@@ -90,7 +90,7 @@ func (h *Handler) HandleOpenWatersExtremes(c *gin.Context) {
 	req, _ := http.NewRequest("GET", url, nil)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.Set("error_type", "OpenWaters Connection Error")
+		setTransportError(c, "OpenWaters", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from OpenWaters"})
 		return
 	}
@@ -215,7 +215,7 @@ func (h *Handler) HandleOpenWatersTimeline(c *gin.Context) {
 	req, _ := http.NewRequest("GET", url, nil)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		c.Set("error_type", "OpenWaters Connection Error")
+		setTransportError(c, "OpenWaters", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch from OpenWaters"})
 		return
 	}
