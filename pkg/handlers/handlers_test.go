@@ -1,8 +1,13 @@
 package handlers
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -817,5 +822,65 @@ func TestHandleGeocodeCacheAPI(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("Expected 0 entries with caching disabled, got %d", len(entries))
+	}
+}
+
+func TestClassifyTransportError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "dns failure",
+			err:  &net.OpError{Op: "dial", Err: &net.DNSError{Err: "server misbehaving", Name: "api.stormglass.io"}},
+			want: "DNS Error",
+		},
+		{
+			name: "certificate failure",
+			err:  &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}},
+			want: "TLS Error",
+		},
+		{
+			name: "timeout",
+			err:  context.DeadlineExceeded,
+			want: "Timeout",
+		},
+		{
+			name: "connection refused",
+			err:  &net.OpError{Op: "dial", Err: errors.New("connection refused")},
+			want: "Connection Error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyTransportError(tt.err); got != tt.want {
+				t.Errorf("classifyTransportError() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A DNS timeout should be reported as a DNS problem, not as a generic timeout.
+func TestClassifyTransportError_DNSTimeoutPrefersDNS(t *testing.T) {
+	err := &net.OpError{Op: "dial", Err: &net.DNSError{Err: "i/o timeout", Name: "api.openwaters.io", IsTimeout: true}}
+	if got := classifyTransportError(err); got != "DNS Error" {
+		t.Errorf("classifyTransportError() = %q, want %q", got, "DNS Error")
+	}
+}
+
+func TestRedactSecrets(t *testing.T) {
+	in := `Get "https://api.bigdatacloud.net/data/reverse-geocode?latitude=1&key=bdc_supersecret": dial tcp: lookup failed`
+	got := redactSecrets(in)
+
+	if strings.Contains(got, "bdc_supersecret") {
+		t.Errorf("redactSecrets() leaked the API key: %s", got)
+	}
+	if !strings.Contains(got, "key=REDACTED") {
+		t.Errorf("redactSecrets() = %s, want the key replaced", got)
+	}
+	if !strings.Contains(got, "latitude=1") {
+		t.Errorf("redactSecrets() dropped non-secret parameters: %s", got)
 	}
 }
