@@ -146,6 +146,7 @@ func main() {
 		api.GET("/v2/tide/sea-level/point", middleware.AppIDMiddleware(allowedAppIDs), middleware.AuthMiddleware(stormglassAPIKey), h.HandleSeaLevel)
 		api.GET("/tides/extremes", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersExtremes)
 		api.GET("/tides/timeline", middleware.AppIDMiddleware(allowedAppIDs), h.HandleOpenWatersTimeline)
+		api.GET("/astronomy", middleware.AppIDMiddleware(allowedAppIDs), h.HandleAstronomy)
 		// -client is deprecated but still used by clients.
 		api.GET("/data/reverse-geocode-client", middleware.AppIDMiddleware(allowedAppIDs), h.HandleReverseGeocode)
 		api.GET("/data/reverse-geocode", middleware.AppIDMiddleware(allowedAppIDs), h.HandleReverseGeocode)

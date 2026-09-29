@@ -57,6 +57,16 @@ func (h *TideHeight) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// AstronomyResponse holds sunrise/sunset times and the current moon phase for
+// a given location and date, computed locally rather than fetched from an
+// upstream provider.
+type AstronomyResponse struct {
+	Sunrise       int64   `json:"sr"`
+	Sunset        int64   `json:"ss"`
+	MoonPhase     float64 `json:"mp"`
+	MoonPhaseName string  `json:"mpn"`
+}
+
 type StationInfo struct {
 	ID      string `json:"id,omitempty"`
 	Name    string `json:"name"`

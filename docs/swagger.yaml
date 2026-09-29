@@ -1,5 +1,16 @@
 basePath: /
 definitions:
+  models.AstronomyResponse:
+    properties:
+      mp:
+        type: number
+      mp_name:
+        type: string
+      sr:
+        type: integer
+      ss:
+        type: integer
+    type: object
   models.DenseTideData:
     properties:
       data:
@@ -79,6 +90,43 @@ info:
   title: Tide Watch Proxy API
   version: "1.0"
 paths:
+  /astronomy:
+    get:
+      description: Calculate sunrise, sunset and moon phase for a location and date.
+        Computed locally, no upstream API call.
+      parameters:
+      - description: Latitude
+        in: query
+        name: lat
+        required: true
+        type: string
+      - description: Longitude
+        in: query
+        name: lng
+        required: true
+        type: string
+      - description: 'Date (Unix timestamp, default: now)'
+        in: query
+        name: date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AstronomyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - AppIdAuth: []
+      summary: Get Astronomy Data
+      tags:
+      - Astronomy
   /data/reverse-geocode:
     get:
       description: Get location name from latitude and longitude using BigDataCloud
