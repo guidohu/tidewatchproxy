@@ -1,15 +1,24 @@
 basePath: /
 definitions:
-  models.AstronomyResponse:
+  models.AstronomyDay:
     properties:
       mp:
         type: number
-      mp_name:
+      mpn:
         type: string
       sr:
         type: integer
       ss:
         type: integer
+      ts:
+        type: integer
+    type: object
+  models.AstronomyResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.AstronomyDay'
+        type: array
     type: object
   models.DenseTideData:
     properties:
@@ -92,8 +101,8 @@ info:
 paths:
   /astronomy:
     get:
-      description: Calculate sunrise, sunset and moon phase for a location and date.
-        Computed locally, no upstream API call.
+      description: Calculate sunrise, sunset and moon phase for a location, one entry
+        per day for the next 7 days. Computed locally, no upstream API call.
       parameters:
       - description: Latitude
         in: query
@@ -105,7 +114,7 @@ paths:
         name: lng
         required: true
         type: string
-      - description: 'Date (Unix timestamp, default: now)'
+      - description: 'Start date (Unix timestamp, default: today)'
         in: query
         name: date
         type: string
@@ -124,7 +133,7 @@ paths:
             type: object
       security:
       - AppIdAuth: []
-      summary: Get Astronomy Data
+      summary: Get Astronomy Forecast
       tags:
       - Astronomy
   /data/reverse-geocode:

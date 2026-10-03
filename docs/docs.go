@@ -22,14 +22,14 @@ const docTemplate = `{
                         "AppIdAuth": []
                     }
                 ],
-                "description": "Calculate sunrise, sunset and moon phase for a location and date. Computed locally, no upstream API call.",
+                "description": "Calculate sunrise, sunset and moon phase for a location, one entry per day for the next 7 days. Computed locally, no upstream API call.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Astronomy"
                 ],
-                "summary": "Get Astronomy Data",
+                "summary": "Get Astronomy Forecast",
                 "parameters": [
                     {
                         "type": "string",
@@ -47,7 +47,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Date (Unix timestamp, default: now)",
+                        "description": "Start date (Unix timestamp, default: today)",
                         "name": "date",
                         "in": "query"
                     }
@@ -633,13 +633,13 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "models.AstronomyResponse": {
+        "models.AstronomyDay": {
             "type": "object",
             "properties": {
                 "mp": {
                     "type": "number"
                 },
-                "mp_name": {
+                "mpn": {
                     "type": "string"
                 },
                 "sr": {
@@ -647,6 +647,20 @@ const docTemplate = `{
                 },
                 "ss": {
                     "type": "integer"
+                },
+                "ts": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.AstronomyResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.AstronomyDay"
+                    }
                 }
             }
         },

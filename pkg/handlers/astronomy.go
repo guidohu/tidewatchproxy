@@ -12,17 +12,22 @@ import (
 	"tide_watch_proxy/pkg/util"
 )
 
-// HandleAstronomy calculates sunrise, sunset and the current moon phase for a
-// location and date, computed locally rather than fetched from an upstream
+// astronomyForecastDays is the number of daily entries returned by
+// HandleAstronomy.
+const astronomyForecastDays = 7
+
+// HandleAstronomy calculates sunrise, sunset and moon phase for a location,
+// at daily resolution for the next astronomyForecastDays days starting from
+// the given date. Computed locally rather than fetched from an upstream
 // provider.
 //
-// @Summary Get Astronomy Data
-// @Description Calculate sunrise, sunset and moon phase for a location and date. Computed locally, no upstream API call.
+// @Summary Get Astronomy Forecast
+// @Description Calculate sunrise, sunset and moon phase for a location, one entry per day for the next 7 days. Computed locally, no upstream API call.
 // @Tags Astronomy
 // @Produce json
 // @Param lat query string true "Latitude"
 // @Param lng query string true "Longitude"
-// @Param date query string false "Date (Unix timestamp, default: now)"
+// @Param date query string false "Start date (Unix timestamp, default: today)"
 // @Success 200 {object} models.AstronomyResponse
 // @Failure 400 {object} map[string]string "Bad Request"
 // @Security AppIdAuth
@@ -58,15 +63,29 @@ func (h *Handler) HandleAstronomy(c *gin.Context) {
 		date = time.Unix(ts, 0)
 	}
 
-	sunTimes := suncalc.GetTimes(date, latVal, lngVal)
-	illumination := suncalc.GetMoonIllumination(date)
+	start := startOfUTCDay(date)
+	days := make([]models.AstronomyDay, 0, astronomyForecastDays)
+	for i := 0; i < astronomyForecastDays; i++ {
+		day := start.AddDate(0, 0, i)
+		sunTimes := suncalc.GetTimes(day, latVal, lngVal)
+		illumination := suncalc.GetMoonIllumination(day)
 
-	c.JSON(http.StatusOK, models.AstronomyResponse{
-		Sunrise:       sunTimes[suncalc.Sunrise].Value.Unix(),
-		Sunset:        sunTimes[suncalc.Sunset].Value.Unix(),
-		MoonPhase:     util.Round(illumination.Phase, 4),
-		MoonPhaseName: moonPhaseName(illumination.Phase),
-	})
+		days = append(days, models.AstronomyDay{
+			Date:          day.Unix(),
+			Sunrise:       sunTimes[suncalc.Sunrise].Value.Unix(),
+			Sunset:        sunTimes[suncalc.Sunset].Value.Unix(),
+			MoonPhase:     util.Round(illumination.Phase, 4),
+			MoonPhaseName: moonPhaseName(illumination.Phase),
+		})
+	}
+
+	c.JSON(http.StatusOK, models.AstronomyResponse{Data: days})
+}
+
+// startOfUTCDay truncates t to midnight UTC of its calendar day.
+func startOfUTCDay(t time.Time) time.Time {
+	u := t.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // moonPhaseName maps a suncalc moon phase value (0-1, where 0 and 1 are new
