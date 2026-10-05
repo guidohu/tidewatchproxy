@@ -15,6 +15,62 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/astronomy": {
+            "get": {
+                "security": [
+                    {
+                        "AppIdAuth": []
+                    }
+                ],
+                "description": "Calculate sunrise, sunset and moon phase for a location, one entry per day for the next 7 days. Computed locally, no upstream API call.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Astronomy"
+                ],
+                "summary": "Get Astronomy Forecast",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Latitude",
+                        "name": "lat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Longitude",
+                        "name": "lng",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (Unix timestamp, default: today)",
+                        "name": "date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.AstronomyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/data/reverse-geocode": {
             "get": {
                 "security": [
@@ -577,6 +633,37 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "models.AstronomyDay": {
+            "type": "object",
+            "properties": {
+                "mp": {
+                    "type": "number"
+                },
+                "mpn": {
+                    "type": "string"
+                },
+                "sr": {
+                    "type": "integer"
+                },
+                "ss": {
+                    "type": "integer"
+                },
+                "ts": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.AstronomyResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.AstronomyDay"
+                    }
+                }
+            }
+        },
         "models.DenseTideData": {
             "type": "object",
             "properties": {
